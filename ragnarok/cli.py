@@ -37,15 +37,21 @@ def main() -> None:
         print({"database": "ok", "ollama": OllamaProvider(settings).health(), "privacy_mode": "local-only"})
     elif args.command == "ingest-odin":
         from .documents import import_odin_bundle
+        from .odin.engine.ingest import DocumentIngestor
         if args.bundle is None:
             parser.error("ingest-odin requires --bundle")
         imported = import_odin_bundle(store, settings.owner_id, args.bundle)
-        print(f"Imported {len(imported)} text documents")
+        with store.connect() as db:
+            structured = DocumentIngestor(db, settings.owner_id).ingest_bundle(args.bundle)
+        print(f"Imported {len(imported)} text documents and {len(structured)} structured contracts")
     elif args.command == "ingest-events":
         from .operational_events import import_event_drop
+        from .odin.engine.event_parser import EventParser
         if args.file is None:
             parser.error("ingest-events requires --file")
         print(import_event_drop(store, settings.owner_id, args.file))
+        with store.connect() as db:
+            print(EventParser(db, settings.owner_id).parse_file(args.file))
     else:
         print("Database migration complete")
 

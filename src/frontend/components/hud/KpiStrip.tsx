@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import type { LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import {
   DollarSign,
@@ -25,7 +26,7 @@ function KpiCard({
   label: string;
   value: string;
   sub?: string;
-  icon: any;
+  icon: LucideIcon;
   variant?: "gold" | "crimson" | "emerald" | "blue";
   delay?: number;
   tooltip?: string;

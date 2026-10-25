@@ -11,6 +11,7 @@ from .operational_events import OperationalEvent, add_event, list_events
 from .store import Store
 from .tools import Step, TOOL_INFO
 from .workflow import approve_step, cancel_task, create_task, task_view
+from .odin.dashboard import overview as odin_overview
 
 
 class TaskRequest(BaseModel):
@@ -292,5 +293,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with store.connect() as db:
             rows = db.execute("SELECT source_file,line_number,line_sha256,error_type,recorded_at FROM event_import_errors WHERE owner_id=? ORDER BY recorded_at DESC,line_number LIMIT ?", (actor, limit)).fetchall()
             return [dict(row) for row in rows]
+
+    @app.get("/api/v1/odin/overview")
+    async def odin_dashboard(checkpoint: date, actor: str = Depends(owner)):
+        with store.connect() as db:
+            return odin_overview(db, actor, checkpoint.isoformat())
 
     return app

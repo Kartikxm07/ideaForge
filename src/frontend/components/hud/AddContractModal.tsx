@@ -35,6 +35,10 @@ export interface ContractDraft {
   fileContent: string;
 }
 
+function newDraftId() {
+  return `CTR-${Date.now()}`;
+}
+
 const CONTRACT_TYPES = [
   "Hosting & Infrastructure",
   "SLA / Service Agreement",
@@ -114,7 +118,7 @@ export function AddContractModal({ open, onClose, onAdd }: AddContractModalProps
     setSubmitted(true);
 
     onAdd?.({
-      id: `CTR-${Date.now()}`,
+      id: newDraftId(),
       ...form,
       fileName: file!.name,
       fileContent: file!.content,

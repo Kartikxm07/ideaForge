@@ -1,177 +1,70 @@
 "use client";
+import { useCallback, useEffect, useState } from "react";
+import { Scale, RefreshCw, FileText, Clock3, AlertTriangle, ShieldCheck } from "lucide-react";
 
-import React, { useState } from "react";
-import Link from "next/link";
-import {
-  Scale,
-  DollarSign,
-  AlertTriangle,
-  FileText,
-  Clock,
-  Layers,
-  ArrowUpRight,
-  PlusCircle,
-  ExternalLink,
-} from "lucide-react";
-import { useOdinStore } from "@/store/useOdinStore";
-import { AddContractModal } from "@/components/hud/AddContractModal";
-
-export default function MinimalDashboard() {
-  const { nodes, timelineEvents } = useOdinStore();
-  const [modalOpen, setModalOpen] = useState(false);
-
-  return (
-    <div className="min-h-screen bg-[#FDFBF7] text-[#18181B] flex flex-col">
-      {/* Streamlined Financial Navbar */}
-      <header className="border-b border-black/[0.06] bg-white px-8 py-3.5 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#D4A017] flex items-center justify-center text-white">
-            <Scale className="w-4 h-4" />
-          </div>
-          <div>
-            <span className="font-bold text-sm tracking-tight">ODIN</span>
-            <span className="ml-2 text-[11px] text-zinc-400 font-medium tracking-wide">
-              FINANCIAL SOLUTIONS
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#D4A017] hover:bg-[#B8880E] text-white text-xs font-semibold shadow-sm transition-all"
-          >
-            <PlusCircle className="w-3.5 h-3.5" />
-            Add Contract
-          </button>
-          <Link
-            href="/onboarding"
-            className="text-xs font-medium text-zinc-600 hover:text-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50"
-          >
-            Entity Settings
-          </Link>
-          <Link
-            href="/login"
-            className="text-xs font-medium text-zinc-500 hover:text-zinc-800"
-          >
-            Sign Out
-          </Link>
-        </div>
-      </header>
-
-      {/* Main minimal dashboard content */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-8 space-y-6">
-        {/* Title row */}
-        <div className="flex items-baseline justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-900">Portfolio Intelligence</h1>
-            <p className="text-xs text-zinc-500 mt-1">
-              Active liability radar and contract conflict synthesis.
-            </p>
-          </div>
-        </div>
-
-        {/* 3 Clean Key Metrics */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white p-5 rounded-xl border border-black/[0.07] shadow-sm">
-            <div className="flex items-center justify-between text-zinc-500 text-xs font-semibold mb-2">
-              <span>TOTAL FINANCIAL EXPOSURE</span>
-              <DollarSign className="w-4 h-4 text-red-600" />
-            </div>
-            <p className="text-2xl font-bold font-mono text-zinc-900">$60,500</p>
-            <p className="text-[11px] text-zinc-400 mt-1">Gross liabilities under review</p>
-          </div>
-
-          <div className="bg-white p-5 rounded-xl border border-black/[0.07] shadow-sm">
-            <div className="flex items-center justify-between text-zinc-500 text-xs font-semibold mb-2">
-              <span>UNRESOLVED CLAUSE CONFLICTS</span>
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
-            </div>
-            <p className="text-2xl font-bold font-mono text-amber-700">3 Conflicts</p>
-            <p className="text-[11px] text-zinc-400 mt-1">1 Critical SLA · 2 High</p>
-          </div>
-
-          <div className="bg-white p-5 rounded-xl border border-black/[0.07] shadow-sm">
-            <div className="flex items-center justify-between text-zinc-500 text-xs font-semibold mb-2">
-              <span>ACTIVE AGREEMENTS</span>
-              <FileText className="w-4 h-4 text-emerald-600" />
-            </div>
-            <p className="text-2xl font-bold font-mono text-zinc-900">{nodes.length} Documents</p>
-            <p className="text-[11px] text-zinc-400 mt-1">Monitored across 8 counterparties</p>
-          </div>
-        </div>
-
-        {/* Simplified Agreements & Deadlines Table */}
-        <div className="bg-white border border-black/[0.07] rounded-xl shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-zinc-800">Monitored Contracts & Counterparties</h2>
-            <span className="text-xs text-zinc-400">{nodes.length} contracts loaded</span>
-          </div>
-
-          <div className="divide-y divide-zinc-100">
-            {nodes.slice(0, 6).map((node) => (
-              <div key={node.id} className="px-6 py-3.5 flex items-center justify-between hover:bg-zinc-50/50 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-zinc-100 flex items-center justify-center text-zinc-600 font-semibold text-xs">
-                    {node.id}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-zinc-900">{node.label}</p>
-                    <p className="text-xs text-zinc-400">{node.counterparty}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  {node.conflicts.length > 0 ? (
-                    <span className="text-[11px] font-semibold text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-                      {node.conflicts.length} conflict{node.conflicts.length > 1 ? "s" : ""}
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                      Compliant
-                    </span>
-                  )}
-                  <span className="text-xs font-mono font-medium text-zinc-600">
-                    {node.value ? `$${node.value.toLocaleString()}` : "—"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Upcoming Action Milestones */}
-        <div className="bg-white border border-black/[0.07] rounded-xl shadow-sm p-6">
-          <h2 className="text-sm font-bold text-zinc-800 mb-4">Upcoming Notice Deadlines</h2>
-          <div className="space-y-3">
-            {timelineEvents.slice(0, 3).map((event) => (
-              <div key={event.id} className="flex items-center justify-between p-3.5 rounded-lg border border-zinc-100 bg-zinc-50/60 text-xs">
-                <div className="flex items-center gap-3">
-                  <Clock className="w-4 h-4 text-amber-700" />
-                  <div>
-                    <p className="font-semibold text-zinc-900">{event.title}</p>
-                    <p className="text-[11px] text-zinc-500">{event.date} · {event.description}</p>
-                  </div>
-                </div>
-                <span className="font-medium text-amber-900 bg-amber-100/70 px-2 py-0.5 rounded text-[10px]">
-                  {event.type}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </main>
-
-      {/* Add contract modal */}
-      <AddContractModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onAdd={(c) => console.log("Added contract:", c)}
-      />
-
-      <footer className="text-center py-4 text-xs text-zinc-400 border-t border-black/[0.04]">
-        ODIN Platform · Institutional Financial Solutions
-      </footer>
-    </div>
-  );
+type Doc = { doc_id:string; title:string; status:string; parse_warnings:string[]; clause_count:number };
+type Clause = { clause_id:string; doc_id:string; section_ref:string; heading:string; body:string };
+type Event = { event_id:string; timestamp:string; channel:string|null; sender:string|null; subject:string|null; body:string };
+type Finding = { finding_id:string; docs:string[]; citations:unknown[]; attack_path:string; severity:string; tag:string; status:string; source_agent:string };
+type Analysis = { id:string; status:string; error:string|null; findings:{id:string;claim:string;explanation:string;evidence:{document_key:string;clause_ref:string;quote:string}[];status:string}[] };
+type Exposure = { exposure_id:string;doc_id:string;scenario:string;amount:number;formula:string|null;breakdown:unknown };
+type Alert = { alert_id:string;severity:string;doc_id:string;message:string;due_date:string|null;clause_ref:string|null;acknowledged:number };
+type Action = { action_id:string;type:string;subject:string;status:string;deadline:string;needs_human_approval:number;body:string;citations:unknown[] };
+type Overview = {
+ checkpoint:string; clock:{checkpoints:string[]}; documents:Doc[]; clauses:Clause[]; events:Event[];
+ timeline:{timeline_id:string;doc_id:string;date:string;description:string;item_type:string;citation:string|null}[];
+ exposure:Exposure[];findings:Finding[];analyses:Analysis[];alerts:Alert[];actions:Action[];
+ tasks:{id:string;status:string}[];workstreams:{ws_id:string;type:string;status:string;reason:string|null}[];
+ messages:{msg_id:string}[];parse_errors:{source:string;error_message:string}[];
+};
+const fallbackDates=["2027-03-15","2027-06-01","2027-09-15"];
+const money=(n:number)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(n);
+function Panel({id,title,children}:{id:string;title:string;children:React.ReactNode}) {
+ return <section id={id} className="scroll-mt-24 rounded-2xl border border-stone-200 bg-white shadow-sm"><h2 className="border-b border-stone-100 px-5 py-4 text-sm font-bold uppercase tracking-widest text-stone-700">{title}</h2><div className="p-5">{children}</div></section>;
+}
+function Empty({children}:{children:React.ReactNode}) {return <p className="rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4 text-sm text-stone-500">{children}</p>}
+function Tag({children}:{children:React.ReactNode}) {return <span className="inline-block rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[11px] font-semibold uppercase text-stone-600">{children}</span>}
+export default function WarRoom() {
+ const [checkpoint,setCheckpoint]=useState(fallbackDates[0]);
+ const [data,setData]=useState<Overview|null>(null);
+ const [selectedDoc,setSelectedDoc]=useState<string|null>(null);
+ const [selectedClause,setSelectedClause]=useState<string|null>(null);
+ const [loading,setLoading]=useState(true);
+ const [error,setError]=useState<string|null>(null);
+ const load=useCallback(async()=>{
+  setLoading(true);setError(null);
+  try {
+   const response=await fetch("/api/odin/overview?checkpoint="+checkpoint,{cache:"no-store"});
+   const result=await response.json();
+   if(!response.ok) throw new Error(result.error || "Request failed");
+   setData(result as Overview);
+   setSelectedDoc(current=>current && result.documents.some((doc:Doc)=>doc.doc_id===current)?current:result.documents[0]?.doc_id || null);
+  } catch(cause) {setError(cause instanceof Error?cause.message:"Could not load ODIN state")}
+  finally {setLoading(false)}
+ },[checkpoint]);
+ useEffect(()=>{void load()},[load]);
+ const document=data?.documents.find(item=>item.doc_id===selectedDoc);
+ const clauses=data?.clauses.filter(item=>item.doc_id===selectedDoc) || [];
+ const clause=clauses.find(item=>item.clause_id===selectedClause) || clauses[0];
+ const analysisFindings=data?.analyses.flatMap(run=>run.findings.map(finding=>({run,finding}))) || [];
+ const dates=data?.clock.checkpoints?.length?data.clock.checkpoints:fallbackDates;
+ return <div className="min-h-screen bg-[#f6f3ed] text-stone-900">
+  <header className="sticky top-0 z-20 border-b border-stone-200 bg-[#fffdf9]/95 backdrop-blur"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-4"><div className="flex items-center gap-3"><div className="rounded-xl bg-amber-700 p-2 text-white"><Scale size={20}/></div><div><strong className="block text-lg leading-5">ODIN</strong><span className="text-xs text-stone-500">Quillhub contract war room · simulated dataset</span></div></div><button onClick={()=>void load()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-medium hover:bg-stone-50 disabled:opacity-50"><RefreshCw size={15}/>Refresh data</button></div></header>
+  <main className="mx-auto max-w-7xl space-y-6 px-5 py-7">
+   <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Evidence first intelligence</p><h1 className="mt-1 text-3xl font-bold">Portfolio overview</h1><p className="mt-2 max-w-2xl text-sm text-stone-600">Inspect persisted contracts, clauses, events and analysis. Uncomputed results are marked unavailable.</p></div><div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"><span className="block text-xs font-bold uppercase text-amber-900">Simulated time</span><span className="font-mono text-lg font-semibold">{checkpoint}</span></div></div>
+   <nav aria-label="War room sections" className="flex flex-wrap gap-2 text-sm">{[["contracts","Contracts & evidence"],["timeline","Timeline"],["exposure","Exposure"],["findings","Findings"],["alerts","Alerts & actions"],["trace","Execution"]].map(([id,title])=><a key={id} href={"#"+id} className="rounded-full border border-stone-200 bg-white px-3 py-1.5 hover:border-amber-500">{title}</a>)}</nav>
+   {error&&<div role="alert" className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}<button onClick={()=>void load()} className="font-bold underline">Retry</button></div>}
+   {loading&&<p role="status" className="rounded-xl border border-stone-200 bg-white p-5 text-sm">Loading persisted ODIN state…</p>}
+   {data&&!loading&&<>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[["Contracts",data.documents.length],["Events by checkpoint",data.events.length],["Stored findings",data.findings.length+analysisFindings.length],["Pending actions",data.actions.filter(item=>item.status==="draft_pending_approval").length]].map(([title,value])=><div key={title} className="rounded-xl border border-stone-200 bg-white p-4"><span className="text-xs font-semibold uppercase text-stone-500">{title}</span><strong className="mt-2 block text-2xl">{value}</strong></div>)}</div>
+    <Panel id="contracts" title="Contract graph & source evidence"><div className="grid gap-5 lg:grid-cols-[270px_minmax(0,1fr)]"><div className="space-y-2">{data.documents.length?data.documents.map(item=><button key={item.doc_id} onClick={()=>{setSelectedDoc(item.doc_id);setSelectedClause(null)}} className={"w-full rounded-xl border p-3 text-left text-sm "+(selectedDoc===item.doc_id?"border-amber-600 bg-amber-50":"border-stone-200 hover:border-amber-400")}><span className="flex items-center gap-2 font-bold"><FileText size={15}/>{item.doc_id}<Tag>{item.status}</Tag></span><span className="mt-1 block text-xs text-stone-600">{item.title}</span></button>):<Empty>No structured contracts loaded. Run the ingest command in the setup guide.</Empty>}</div><div>{document?<><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-bold">{document.title}</h3><p className="text-xs text-stone-500">{document.doc_id} · {document.clause_count} extracted clause nodes</p></div><Tag>{document.status}</Tag></div>{document.parse_warnings.map(warning=><p key={warning} className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{warning}</p>)}<div className="mt-4 grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]"><div className="max-h-96 space-y-1 overflow-auto">{clauses.map(item=><button key={item.clause_id} onClick={()=>setSelectedClause(item.clause_id)} className={"w-full rounded-lg p-2 text-left text-xs "+(clause?.clause_id===item.clause_id?"bg-amber-100 text-amber-950":"hover:bg-stone-100")}>{item.section_ref} · {item.heading.slice(0,48)}</button>)}</div><div className="max-h-96 overflow-auto rounded-xl border border-stone-200 bg-stone-50 p-4">{clause?<><Tag>{clause.section_ref}</Tag><h4 className="mt-2 font-semibold">{clause.heading}</h4><pre className="mt-3 whitespace-pre-wrap font-sans text-sm leading-6 text-stone-700">{clause.body}</pre></>:<Empty>No clause evidence extracted.</Empty>}</div></div><p className="mt-3 text-xs text-stone-500">Edges connect documents to clauses extracted from their source text. Cross-document relationships are not yet verified.</p></>:<Empty>Select a document to inspect its source clauses.</Empty>}</div></div></Panel>
+    <Panel id="timeline" title="Events & simulated time"><div className="mb-4 flex flex-wrap items-center gap-2"><Clock3 size={17} className="text-amber-700"/>{dates.map(date=><button key={date} onClick={()=>setCheckpoint(date)} className={"rounded-lg px-3 py-1.5 font-mono text-xs "+(checkpoint===date?"bg-amber-700 text-white":"border border-stone-200 hover:border-amber-500")}>{date}</button>)}</div><p className="mb-4 text-xs text-stone-500">Checkpoint selection filters persisted events by timestamp; it does not change real-world time.</p>{data.events.length?<div className="max-h-96 divide-y divide-stone-100 overflow-auto">{data.events.map(event=><details key={event.event_id} className="py-3"><summary className="cursor-pointer text-sm font-medium"><span className="mr-2 font-mono text-xs text-amber-800">{event.event_id}</span>{event.subject||"Untitled event"}<span className="ml-2 text-xs font-normal text-stone-500">{event.timestamp.slice(0,10)}</span></summary><p className="mt-2 text-xs text-stone-500">From {event.sender||"Unknown"} · {event.channel||"Unknown channel"}</p><p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">{event.body}</p></details>)}</div>:<Empty>No events ingested for this checkpoint.</Empty>}{data.timeline.length?<div className="mt-4 space-y-2">{data.timeline.map(item=><div key={item.timeline_id} className="rounded-lg border border-stone-200 p-3 text-sm"><Tag>{item.item_type}</Tag> <strong>{item.date} · {item.doc_id}</strong><p>{item.description}</p>{item.citation&&<p className="text-xs text-stone-500">Source: {item.citation}</p>}</div>)}</div>:<p className="mt-4 text-xs text-stone-500">No obligation timeline computed for this checkpoint.</p>}</Panel>
+    <Panel id="exposure" title="Financial exposure">{data.exposure.length?<div className="space-y-3">{data.exposure.map(item=><div key={item.exposure_id} className="rounded-xl border border-stone-200 p-4"><div className="flex items-center justify-between"><span><strong>{item.doc_id}</strong> <Tag>{item.scenario}</Tag></span><strong className="font-mono text-xl">{money(item.amount)}</strong></div><p className="mt-2 text-sm">Formula: {item.formula||"Not recorded"}</p>{item.breakdown!=null&&<pre className="mt-2 overflow-auto rounded-lg bg-stone-50 p-2 text-xs">{JSON.stringify(item.breakdown,null,2)}</pre>}</div>)}</div>:<Empty>Exposure has not been calculated and persisted for this checkpoint. No financial total can be reported.</Empty>}</Panel>
+    <Panel id="findings" title="Findings, verification & debate">{data.findings.length||analysisFindings.length?<div className="space-y-3">{data.findings.map(item=><article key={item.finding_id} className="rounded-xl border border-stone-200 p-4"><div className="flex flex-wrap gap-2"><Tag>{item.severity}</Tag><Tag>{item.status}</Tag><Tag>{item.tag}</Tag><span className="text-xs text-stone-500">{item.source_agent} · {item.docs.join(", ")}</span></div><p className="mt-2 text-sm">{item.attack_path}</p><pre className="mt-2 whitespace-pre-wrap text-xs text-stone-500">{JSON.stringify(item.citations,null,2)}</pre></article>)}{analysisFindings.map(({run,finding})=><article key={finding.id} className="rounded-xl border border-stone-200 p-4"><Tag>{finding.status}</Tag><span className="ml-2 text-xs text-stone-500">Analysis {run.id.slice(0,8)} · {run.status}</span><h3 className="mt-2 font-semibold">{finding.claim}</h3><p className="mt-1 text-sm text-stone-600">{finding.explanation}</p>{finding.evidence.map((evidence,index)=><button key={index} onClick={()=>{setSelectedDoc(evidence.document_key);setSelectedClause(null);window.document.getElementById("contracts")?.scrollIntoView({behavior:"smooth"})}} className="mt-2 block rounded-lg border border-stone-200 bg-stone-50 p-2 text-left text-xs hover:border-amber-500"><strong>{evidence.document_key} · {evidence.clause_ref}</strong><span className="block text-stone-600">“{evidence.quote}”</span></button>)}</article>)}</div>:<Empty>No agent findings persisted. Source clauses above are evidence, not agent conclusions.</Empty>}{data.analyses.filter(run=>run.error).map(run=><p key={run.id} className="mt-2 rounded-lg bg-red-50 p-3 text-sm text-red-800">Analysis {run.id.slice(0,8)} failed: {run.error}</p>)}</Panel>
+    <Panel id="alerts" title="Alerts & human actions"><div className="grid gap-5 lg:grid-cols-2"><div><h3 className="mb-3 text-sm font-semibold">Prioritized alerts</h3>{data.alerts.length?data.alerts.map(item=><div key={item.alert_id} className="mb-2 rounded-xl border border-stone-200 p-3 text-sm"><span className="flex items-center gap-2"><AlertTriangle size={15} className="text-amber-700"/><Tag>{item.severity}</Tag><Tag>{item.acknowledged?"acknowledged":"open"}</Tag></span><p className="mt-2 font-semibold">{item.message}</p><p className="mt-1 text-xs text-stone-500">{item.doc_id} {item.clause_ref||""} · due {item.due_date||"not recorded"}</p></div>):<Empty>No alert engine output stored for this checkpoint.</Empty>}</div><div><h3 className="mb-3 text-sm font-semibold">Draft actions</h3>{data.actions.length?data.actions.map(item=><details key={item.action_id} className="mb-2 rounded-xl border border-stone-200 p-3 text-sm"><summary className="cursor-pointer font-semibold">{item.subject} <Tag>{item.status}</Tag></summary><p className="mt-2 text-xs text-stone-500">{item.type} · deadline {item.deadline} · {item.needs_human_approval?"Human approval required":"No approval flag"}</p><p className="mt-2 whitespace-pre-wrap">{item.body}</p><pre className="mt-2 whitespace-pre-wrap text-xs text-stone-500">{JSON.stringify(item.citations,null,2)}</pre></details>):<Empty>No action drafts stored. Sending and ODIN action approval are not exposed by this backend.</Empty>}</div></div></Panel>
+    <Panel id="trace" title="Execution & data quality"><div className="grid gap-5 md:grid-cols-3"><div><h3 className="mb-2 font-semibold">Workstreams</h3>{data.workstreams.length?data.workstreams.map(item=><p key={item.ws_id} className="mb-2 rounded-lg bg-stone-50 p-2 text-sm">{item.ws_id} · <Tag>{item.status}</Tag>{item.reason&&<span className="block text-xs">{item.reason}</span>}</p>):<Empty>No ODIN workstream has run.</Empty>}</div><div><h3 className="mb-2 font-semibold">Runtime execution</h3>{data.tasks.map(item=><p key={item.id} className="mb-2 rounded-lg bg-stone-50 p-2 text-xs font-mono">Task {item.id.slice(0,8)} · {item.status}</p>)}{data.analyses.map(item=><p key={item.id} className="mb-2 rounded-lg bg-stone-50 p-2 text-xs font-mono">Analysis {item.id.slice(0,8)} · {item.status}</p>)}{!data.tasks.length&&!data.analyses.length&&<Empty>No execution recorded.</Empty>}</div><div><h3 className="mb-2 font-semibold">Ingestion health</h3>{data.parse_errors.length?data.parse_errors.map((item,index)=><p key={item.source+index} className="mb-2 rounded-lg bg-amber-50 p-2 text-xs">{item.source}: {item.error_message}</p>):<Empty>No parse errors recorded.</Empty>}{data.messages.length>0&&<p className="mt-2 text-xs text-stone-500">{data.messages.length} agent messages recorded.</p>}</div></div></Panel>
+   </>}
+   <footer className="pb-6 text-xs text-stone-500"><ShieldCheck size={14} className="mr-1 inline"/>Evidence comes from the local Quillhub test dataset. Agent assertions require human review.</footer>
+  </main>
+ </div>
 }

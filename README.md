@@ -1,5 +1,7 @@
 # ODIN — Autonomous Contract Intelligence Engine
 
+For the runnable, evidence-backed local dashboard, see [ODIN_DEMO.md](ODIN_DEMO.md). It documents startup, the evaluator walkthrough, and which planned agent capabilities are still unavailable.
+
 > **Beyond contract summaries. From static legal documents to a living, evidence-backed risk radar.**
 
 **Hackathon:** Quillhub Autonomous Contract Intelligence Challenge — *Trial of the Nine Realms*  
