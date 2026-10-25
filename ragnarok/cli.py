@@ -24,14 +24,21 @@ def main() -> None:
         from .analysis import run_analysis_once
         from .model import OllamaProvider
         provider = OllamaProvider(settings)
-        while True:
-            worked = run_once(store, settings.owner_id)
-            if not worked:
-                worked = run_analysis_once(store, settings.owner_id, provider)
-            if args.once:
-                break
-            if not worked:
-                time.sleep(1)
+        print(f"[Ragnarok Worker] Started. Listening on {settings.db_path} (owner: {settings.owner_id}, model: {settings.ollama_model})")
+        print("[Ragnarok Worker] Polling for tasks from API... (Press Ctrl+C to stop)")
+        try:
+            while True:
+                worked = run_once(store, settings.owner_id)
+                if not worked:
+                    worked = run_analysis_once(store, settings.owner_id, provider)
+                if worked:
+                    print(f"[Ragnarok Worker] Processed job successfully at {time.strftime('%H:%M:%S')}")
+                if args.once:
+                    break
+                if not worked:
+                    time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n[Ragnarok Worker] Stopped by user.")
     elif args.command == "doctor":
         from .model import OllamaProvider
         print({"database": "ok", "ollama": OllamaProvider(settings).health(), "privacy_mode": "local-only"})
