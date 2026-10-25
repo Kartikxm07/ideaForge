@@ -90,6 +90,11 @@ class EmailDraftApproval(BaseModel):
     body: str = Field(min_length=20, max_length=10000)
 
 
+class HumanReviewAnswer(BaseModel):
+    answer: str = Field(min_length=1, max_length=5000)
+    decision: Literal["Approve", "Reject", "Escalate"] = "Approve"
+
+
 def install_workspace(app, store, settings, owner, session):
     router = APIRouter(prefix="/api/v1/workspace", tags=["ODIN workspace"])
 
@@ -380,6 +385,76 @@ def install_workspace(app, store, settings, owner, session):
             current.pop("id", None)
             current.pop("created_at", None)
             return save(db, actor, "agent-email-draft", current, draft_id)
+
+    @router.get("/agents/runs/{run_id}/review-questions")
+    def get_review_questions(run_id: str, actor=Depends(owner)):
+        """Return one clarifying question per Tyr ruling that needs human input."""
+        result = agent_run_view(store, actor, run_id)
+        if not result:
+            raise HTTPException(404, "Agent run not found")
+        with store.connect() as db:
+            rulings = [r for r in _list(db, actor, "agent-ruling", run_id) if r.get("outcome") in ("needs_review", "upheld")]
+            existing = {r["ruling_id"]: r for r in _list(db, actor, "agent-human-review", run_id)}
+        questions = []
+        for ruling in rulings:
+            review = existing.get(ruling["id"])
+            finding_claim = ruling.get("finding_id", "")
+            for f in result.get("findings", []):
+                if f["id"] == ruling.get("finding_id"):
+                    finding_claim = f["claim"]
+                    break
+            questions.append({
+                "id": ruling["id"],
+                "run_id": run_id,
+                "outcome": ruling["outcome"],
+                "finding_claim": finding_claim,
+                "rationale": ruling.get("rationale", ""),
+                "draft_notice": ruling.get("draft_notice"),
+                "citations": ruling.get("citations", []),
+                "question": (
+                    f"Tyr has flagged this as needing human review:\n\n"
+                    f"Finding: {finding_claim}\n"
+                    f"Rationale: {ruling.get('rationale', '')}\n\n"
+                    f"Do you Approve, Reject, or Escalate this finding? "
+                    f"Please provide your reasoning."
+                ),
+                "answered": review is not None,
+                "answer": review.get("answer") if review else None,
+                "decision": review.get("decision") if review else None,
+                "answered_at": review.get("created_at") if review else None,
+            })
+        return {"run_id": run_id, "status": result["status"], "questions": questions,
+                "pending": sum(1 for q in questions if not q["answered"])}
+
+    def _list(db, actor, kind, run_id):
+        return [{**json.loads(r["data"]), "id": r["id"], "created_at": r["created_at"]}
+                for r in db.execute(
+                    "SELECT * FROM web_records WHERE owner_id=? AND kind=? AND json_extract(data,'$.run_id')=? ORDER BY created_at",
+                    (actor, kind, run_id))]
+
+    @router.post("/agents/runs/{run_id}/review-questions/{question_id}/answer", status_code=201)
+    def answer_review_question(run_id: str, question_id: str, body: HumanReviewAnswer, s=Depends(session)):
+        """Store a human review answer for a Tyr ruling. Any team member can review."""
+        actor = s["org_id"]
+        result = agent_run_view(store, actor, run_id)
+        if not result:
+            raise HTTPException(404, "Agent run not found")
+        with store.connect() as db:
+            rulings = _list(db, actor, "agent-ruling", run_id)
+            ruling = next((r for r in rulings if r["id"] == question_id), None)
+            if not ruling:
+                raise HTTPException(404, "Ruling not found in this run")
+            key = f"review:{run_id}:{question_id}"
+            return save(db, actor, "agent-human-review", {
+                "run_id": run_id,
+                "ruling_id": question_id,
+                "finding_id": ruling.get("finding_id"),
+                "answer": body.answer.strip(),
+                "decision": body.decision,
+                "reviewer_id": s["user_id"],
+                "reviewer_name": s["name"],
+                "reviewed_at": now(),
+            }, key)
 
     @router.get("/events")
     def workspace_events(as_of: date | None = None, actor=Depends(owner)):

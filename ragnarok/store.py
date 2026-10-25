@@ -33,7 +33,7 @@ class Store:
         with self.connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version > 7:
+            if version > 8:
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             if version == 0:
                 script = (Path(__file__).resolve().parent / "migrations" / "001_init.sql").read_text(encoding="utf-8")
@@ -69,6 +69,11 @@ class Store:
                 script = (Path(__file__).resolve().parent / "migrations" / "007_document_uploads.sql").read_text(encoding="utf-8")
                 db.executescript(script)
                 db.execute("PRAGMA user_version=7")
+                version = 7
+            if version == 7:
+                script = (Path(__file__).resolve().parent / "migrations" / "008_rag_chunks.sql").read_text(encoding="utf-8")
+                db.executescript(script)
+                db.execute("PRAGMA user_version=8")
 
     @staticmethod
     def event(db: sqlite3.Connection, task_id: str, owner_id: str, kind: str, message: str) -> None:

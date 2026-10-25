@@ -22,7 +22,9 @@ AGENTS = {
     "Tyr": "Rule on verified findings and draft review actions",
 }
 
-THOR_CHUNK_CHARS = 20_000
+# RAG pipeline chunk target: ~512 tokens at 4 chars/token = 2048 chars.
+# Each chunk carries its active clause heading so Thor always has citation context.
+THOR_CHUNK_CHARS = 2048
 
 
 def contract_warning(content: str) -> str | None:

@@ -43,6 +43,9 @@ def extract_pdf(raw: bytes) -> tuple[str, int]:
         parts = []
         for number, page in enumerate(reader.pages, start=1):
             text = page.extract_text() or ""
+            if not text.strip():
+                # OCR fallback — only attempted if pytesseract + pdf2image are installed
+                text = _ocr_page(raw, number)
             if text.strip():
                 parts.append(f"# Page {number}\n{text.strip()}\n")
             if sum(len(part.encode("utf-8")) for part in parts) > MAX_EXTRACTED_BYTES:
@@ -52,8 +55,28 @@ def extract_pdf(raw: bytes) -> tuple[str, int]:
     except Exception as exc:
         raise ValueError("PDF text could not be extracted; paste the contract text instead") from exc
     if not parts:
-        raise ValueError("No selectable text was found in this PDF. Paste its text below, or upload an OCR version")
+        raise ValueError(
+            "No selectable text was found in this PDF and OCR is unavailable. "
+            "Paste the contract text instead, or install pytesseract + pdf2image for OCR support."
+        )
     return "\n".join(parts), pages
+
+
+def _ocr_page(raw: bytes, page_number: int) -> str:
+    """Best-effort OCR for one page. Returns empty string if dependencies are absent."""
+    try:
+        import pytesseract  # type: ignore
+        from pdf2image import convert_from_bytes  # type: ignore
+        images = convert_from_bytes(raw, first_page=page_number, last_page=page_number, dpi=200)
+        if images:
+            return pytesseract.image_to_string(images[0])
+    except ImportError:
+        pass  # OCR dependencies not installed — silent fallback
+    except Exception:
+        pass
+    return ""
+
+
 
 
 def parse_jsonl(raw: bytes) -> tuple[Literal["events", "contract"], list[OperationalEvent] | str, list[tuple[int, str, str]]]:
