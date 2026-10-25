@@ -123,4 +123,160 @@ The source files and `format_spec.md` define the authoritative input and citatio
 7. **Verify against events:** Heimdall correlates actual operational drops and records whether each hypothesis is supported, contradicted, or unresolved.
 8. **Adjudicate and act:** Tyr evaluates disputed claims, documents a ruling, and drafts notices or tasks. **Every external legal communication requires human approval.**
 9. **Synthesize and visualize:** Generate per-contract reports, a portfolio-wide priority list, checkpoint deltas, and an auditable agent trace.
+### Checkpoint-aware Processing
 
+We will use the **three simulated dates in `clock.json`**, processing event drops according to the supplied specification. The exact date/drop mapping will be read from the actual files rather than hardcoded here. At each checkpoint, ODIN saves a snapshot and recalculates only affected obligations, claims, and exposures. The UI time slider replays these saved states to show **what changed, when, and why**.
+
+## Critical Risk Scenarios We Target
+
+| Challenge | Detection approach |
+|---|---|
+| **Cross-contract and territorial conflicts** | Compare residency, permitted regions, exclusivity, security, and operational commitments across effective clauses |
+| **Upstream vs. downstream recovery gap** | Compare customer-facing SLA liabilities with hosting-provider credits/caps; estimate exposure without assuming every claim is recoverable |
+| **Silent amendment supersession** | Resolve A3 changes to A2 before applying the upstream SLA in other comparisons |
+| **Hidden external defaults** | Cross-check insurance/certification/signatory or other external facts against continuing contractual obligations |
+| **Renewal, cure, and notice deadlines** | Apply date rules and holiday calendars; surface upcoming or missed obligations |
+| **Event-triggered duties** | Link outages, invoice problems, breaches, or other event drops to clause-specific response windows |
+| **Data-quality failures** | Identify ledger duplicates, conflicting values, malformed JSONL, missing fields, and unsupported citations |
+
+**Illustrative calculation:** `net exposure = estimated downstream liability − contractually recoverable upstream amount`. Both components must be backed by applicable clauses, event facts, limitations, and stated assumptions; negative results should not be silently treated as losses.
+
+## Evidence, Safety, and Reliability
+
+A finding should have an auditable record resembling:
+
+```json
+{
+  "finding_id": "F-001",
+  "contract_ids": ["A2", "A3", "B1"],
+  "claim": "Potential upstream/downstream SLA recovery gap",
+  "finding_type": "inference",
+  "source_evidence": [
+    {
+      "document_id": "A3",
+      "clause_id": "<verified clause identifier>",
+      "exact_quote": "<verified excerpt from source>"
+    }
+  ],
+  "confidence": null,
+  "status": "unverified",
+  "requires_human_review": true
+}
+```
+
+The object above is **schema illustration, not an actual finding**.
+
+Our validation guardrails:
+
+- **Source-first claims:** exact clause quotes, document IDs, and offsets; detect missing/mismatched citations.
+- **Facts ≠ interpretations:** show extracted contract facts, assumptions, forecasts, and agent opinions separately.
+- **Explicit uncertainty:** `verified`, `disputed`, `ambiguous`, `unverified`, or `refuted`; never force an answer.
+- **Bounded agent loops:** proposed limits of two targeted clarification attempts and two debate rounds per issue, plus global call/time budgets.
+- **Failure-safe output:** if models, parsers, or budget limits fail, show **partial analysis** with an explanation; do not mark it complete.
+- **Replayability:** persist snapshots, evidence, generated drafts, and agent routing logs; cache source-stable extractions.
+- **Human-in-the-loop:** no automated dispatch of legal notices, contract termination, or financial actions.
+- **Evaluation:** build a manually checked small reference set and tune evidence/confidence thresholds against precision and recall rather than using arbitrary universal weights.
+
+## Dashboard — Planned Experience
+
+| View | What judges can inspect |
+|---|---|
+| **Portfolio Overview** | Critical alerts, highest-risk contracts, estimated aggregate exposure |
+| **Contract Relationship Graph** | Contract, party, clause, incorporation, amendment, dependency, and conflict edges |
+| **Time Travel Slider** | Deadline changes and risk deltas across simulated checkpoints |
+| **Financial Exposure Panel** | Downstream liability, upstream recovery, assumptions, and calculated gap |
+| **Agent Debate Trace** | Loki hypothesis → Heimdall rebuttal → Tyr ruling, with source evidence |
+| **Action Center** | Prioritized next steps, suggested owners, draft notices, review status |
+
+## Suggested Repository Structure
+
+```text
+odin/
+├── README.md
+├── .env.example
+├── backend/
+│   ├── app/
+│   │   ├── main.py                 # FastAPI entry point
+│   │   ├── api/                    # Contracts, runs, findings, events, reports
+│   │   ├── agents/                 # odin, thor, norns, loki, heimdall, tyr
+│   │   ├── graph/                  # LangGraph state, nodes, routing
+│   │   ├── ingestion/              # Parsing, normalization, clause indexing
+│   │   ├── services/               # Citation check, amendment resolution, dates
+│   │   ├── models/                 # Pydantic schemas
+│   │   └── storage/                # SQLite and snapshots
+│   ├── tests/
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   └── lib/
+│   └── package.json
+└── data/                            # Place challenge data locally as permitted
+```
+
+*This is the intended structure; directories and commands should be updated to match the actual repository once implementation exists.*
+
+## Local Setup — Proposed Development Commands
+
+Prerequisites: Python 3.11+, Node.js 20+, and access to a configured LLM endpoint. For local inference, install [Ollama](https://ollama.com/) and select a model suitable for the machine.
+
+```bash
+# Backend (once requirements and app are implemented)
+cd backend
+python -m venv .venv
+# Windows PowerShell:
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+```bash
+# Frontend (in another terminal, once the React project exists)
+cd frontend
+npm install
+npm run dev
+```
+
+Example environment settings (names must match the implemented app):
+
+```dotenv
+LLM_BASE_URL=http://localhost:11434
+LLM_MODEL=<selected-model>
+DATABASE_URL=sqlite:///./odin.db
+CORS_ORIGINS=http://localhost:5173
+```
+
+**These are setup targets, not verified working run instructions.** We will update them after the repo and model adapters are implemented.
+
+## How We Will Validate Our Solution
+
+1. Confirm every cited excerpt against the source text and the challenge's exact formatting rules.
+2. Manually check a small set of extracted facts and compare precision/recall.
+3. Run tests for amendment precedence, business-day deadlines, ledger duplication, and malformed event handling.
+4. Verify that events change findings only when there is relevant new evidence.
+5. Confirm that disagreements, clarification requests, and termination reasons are visible in logs.
+6. Verify that unfinished work is explicitly marked **partial**, not **complete**.
+7. Demonstrate each of the challenge's seven risk categories with verified evidence where the data supports them.
+
+## Demo Storyboard
+
+1. **Upload the bundle:** Odin discovers the portfolio and displays its analysis plan.
+2. **Reveal the graph:** Show how master terms, amendments, addenda, vendors, and customer agreements connect.
+3. **Open a risk:** Click a proposed cross-contract discrepancy and inspect both original clause quotes.
+4. **Travel through time:** Move between checkpoints to show new deadlines, event-driven changes, and exposure calculations.
+5. **Watch agent scrutiny:** See Loki challenge, Heimdall verify/refute, and Tyr issue a transparent ruling when required.
+6. **Take action safely:** Open a drafted notice and its required human-approval step.
+7. **Export the result:** Display an evidence-linked contract report and portfolio summary.
+
+## Why Our Approach Is Different
+
+**Not just RAG. Not just a summary.** ODIN combines temporal reasoning, contract hierarchy, cross-document dependency tracking, deterministic validation, operational event monitoring, multi-agent debate, and approval-gated action drafting. Its goal is to produce **traceable decisions**, not confident-looking text.
+
+---
+
+### Scope & Attribution
+
+The Quillhub scenario and filenames come from the challenge materials described in the team's notes. The data is fictional. The challenge notes state that `STD.txt` adapts the [Common Paper Cloud Service Agreement Standard Terms v2.0](https://commonpaper.com/standards/cloud-service-agreement/2.0/) under **CC BY 4.0**, with modifications. ODIN's source-specific findings must be verified against the actual supplied files before publication.
+
+**Team:** _Add team name, members, GitHub repository, and demo link here._
