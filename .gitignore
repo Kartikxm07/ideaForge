@@ -19,3 +19,5 @@ dist/
 *.db
 *.npy
 *.meta.json
+chroma_db/
+**/chroma_db/

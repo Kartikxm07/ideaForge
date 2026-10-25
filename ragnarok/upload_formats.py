@@ -1,4 +1,4 @@
-"""Deterministic extraction for browser PDF, TXT and JSONL uploads."""
+"""Deterministic extraction for browser PDF, TXT, JSONL and image (OCR) uploads."""
 from io import BytesIO
 import json
 from pathlib import Path
@@ -63,18 +63,101 @@ def extract_pdf(raw: bytes) -> tuple[str, int]:
 
 
 def _ocr_page(raw: bytes, page_number: int) -> str:
-    """Best-effort OCR for one page. Returns empty string if dependencies are absent."""
+    """Best-effort OCR for one PDF page. Tries PyMuPDF + easyocr, then pdf2image/pytesseract."""
+    # --- 1. PyMuPDF pixmap render + easyocr (zero external binaries needed) ---
+    try:
+        import pymupdf as fitz  # type: ignore
+        from PIL import Image  # type: ignore
+        doc = fitz.open(stream=raw, filetype="pdf")
+        if 1 <= page_number <= len(doc):
+            page = doc.load_page(page_number - 1)
+            pix = page.get_pixmap(dpi=150)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            text = _easyocr_image(img)
+            if text.strip():
+                return text
+    except Exception:
+        pass
+
+    # --- 2. pdf2image + easyocr ---
+    try:
+        from pdf2image import convert_from_bytes  # type: ignore
+        images = convert_from_bytes(raw, first_page=page_number, last_page=page_number, dpi=200)
+        if images:
+            text = _easyocr_image(images[0])
+            if text.strip():
+                return text
+    except Exception:
+        pass
+
+    # --- 3. pytesseract fallback (requires Tesseract binary) ---
     try:
         import pytesseract  # type: ignore
         from pdf2image import convert_from_bytes  # type: ignore
         images = convert_from_bytes(raw, first_page=page_number, last_page=page_number, dpi=200)
         if images:
             return pytesseract.image_to_string(images[0])
-    except ImportError:
-        pass  # OCR dependencies not installed — silent fallback
     except Exception:
         pass
     return ""
+
+
+IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "tiff", "tif", "bmp"}
+
+
+def _easyocr_image(pil_image) -> str:
+    """Run easyocr on a PIL image. Returns joined text or empty string."""
+    import numpy as np  # type: ignore
+    import easyocr  # type: ignore
+    arr = np.array(pil_image)
+    reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+    results = reader.readtext(arr, detail=0)
+    return "\n".join(results)
+
+
+def ocr_image(raw: bytes, filename: str = "image") -> str:
+    """Extract text from an image file (PNG/JPG/WEBP/TIFF) via OCR.
+
+    Tries easyocr first (no Tesseract required), then pytesseract.
+    Raises ValueError if both are unavailable or text is too short.
+    """
+    from PIL import Image  # type: ignore
+
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise ValueError("Image exceeds the 12 MB upload limit")
+
+    try:
+        pil_image = Image.open(BytesIO(raw)).convert("RGB")
+    except Exception as exc:
+        raise ValueError("Could not open image file — unsupported format?") from exc
+
+    text = ""
+    # 1. easyocr
+    try:
+        text = _easyocr_image(pil_image)
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # 2. pytesseract fallback
+    if not text.strip():
+        try:
+            import pytesseract  # type: ignore
+            text = pytesseract.image_to_string(pil_image)
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+    if not text.strip():
+        raise ValueError(
+            "No text could be extracted from this image. "
+            "Make sure easyocr is installed (pip install easyocr) "
+            "or install Tesseract and pytesseract."
+        )
+    return text.strip()
+
 
 
 

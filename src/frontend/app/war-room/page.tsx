@@ -20,6 +20,7 @@ import {
   Swords,
   UploadCloud,
   Users,
+  Layers,
 } from "lucide-react";
 import {
   odinApi,
@@ -30,8 +31,9 @@ import {
   type OdinSession,
 } from "@/lib/odin-api";
 import { TrialView } from "@/components/views/TrialView";
+import { OdinWebView } from "@/components/views/OdinWebView";
 
-type View = "trial" | "debate" | "exposure" | "graph" | "time" | "actions";
+type View = "trial" | "odin_web" | "debate" | "exposure" | "graph" | "time" | "actions";
 const navigation: {
   id: View;
   label: string;
@@ -39,6 +41,7 @@ const navigation: {
   code: string;
 }[] = [
   { id: "trial", label: "Agent Trial Chamber", icon: Swords, code: "FR7.2" },
+  { id: "odin_web", label: "Odin Web & OCR Vault", icon: Layers, code: "ODIN.1" },
   { id: "debate", label: "Agent Debate", icon: Users, code: "FR9.4" },
   {
     id: "exposure",
@@ -1495,6 +1498,7 @@ export default function WarRoomPage() {
             </span>
           </div>
           {view === "trial" && <TrialView />}
+          {view === "odin_web" && <OdinWebView />}
           {view === "graph" && <GraphPanel graph={graph} />}
           {view === "time" && <TimePanel run={run} day={day} setDay={setDay} />}
           {view === "exposure" && (

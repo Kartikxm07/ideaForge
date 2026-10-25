@@ -28,6 +28,29 @@ class ChunkStorage:
         self._init_db()
         self._vectors: List[np.ndarray] = []
         self._row_ids: List[int] = []
+
+        # ChromaDB — auto-selects local PersistentClient or remote HttpClient
+        # Set CHROMA_USE_HTTP=true + CHROMA_HOST + CHROMA_PORT for production/Neon
+        self.chroma_path = base_dir / "chroma_db"
+        try:
+            import chromadb
+            _use_http = os.getenv("CHROMA_USE_HTTP", "false").lower() == "true"
+            if _use_http:
+                _host = os.getenv("CHROMA_HOST", "localhost")
+                _port = int(os.getenv("CHROMA_PORT", "8001"))
+                self.chroma_client = chromadb.HttpClient(host=_host, port=_port)
+            else:
+                self.chroma_client = chromadb.PersistentClient(path=str(self.chroma_path))
+            self.collection = self.chroma_client.get_or_create_collection(
+                name="odin_chunks",
+                metadata={"hnsw:space": "cosine"}
+            )
+            self.has_chroma = True
+        except Exception:
+            self.has_chroma = False
+            self.chroma_client = None
+            self.collection = None
+
         self._load_vectors()
 
     def _get_conn(self) -> sqlite3.Connection:
@@ -86,6 +109,12 @@ class ChunkStorage:
         if self.meta_path.exists():
             try:
                 self.meta_path.unlink()
+            except Exception:
+                pass
+        if self.has_chroma and self.chroma_client:
+            try:
+                self.chroma_client.delete_collection("odin_chunks")
+                self.collection = self.chroma_client.get_or_create_collection("odin_chunks", metadata={"hnsw:space": "cosine"})
             except Exception:
                 pass
 
@@ -189,6 +218,27 @@ class ChunkStorage:
             self._vectors.append(vec)
         self._save_vectors()
 
+        # ChromaDB Vector Store Persistence
+        if self.has_chroma and self.collection:
+            try:
+                self.collection.upsert(
+                    ids=[chunk_id],
+                    embeddings=[vec.tolist()],
+                    documents=[text],
+                    metadatas=[{
+                        "chunk_id": str(chunk_id),
+                        "document_id": str(document_id),
+                        "clause_ref": str(clause_ref or ""),
+                        "page_num": int(page_num),
+                        "char_start": int(char_start),
+                        "char_end": int(char_end),
+                        "token_count": int(token_count),
+                        "source_type": str(source_type),
+                    }]
+                )
+            except Exception:
+                pass
+
         # Stored position
         return {
             "collection": "odin_chunks",
@@ -283,3 +333,95 @@ class ChunkStorage:
         except Exception:
             d["metadata"] = {}
         return d
+
+    def get_memory_map(self) -> Dict[str, Any]:
+        """
+        Calculates a 2D semantic projection of the shared vector space
+        using SVD/PCA on the 128D embedding vectors.
+        Maps chunks, Thor facts/claims, and inter-agent relationships.
+        """
+        chunks = self.get_all_chunks()
+        facts = self.get_all_facts()
+        if not self._vectors or not chunks:
+            return {"nodes": [], "edges": [], "dimensions": [], "total_chunks": 0, "total_facts": 0}
+
+        matrix = np.vstack(self._vectors)
+        centered = matrix - matrix.mean(axis=0)
+        u, s, _ = np.linalg.svd(centered, full_matrices=False)
+        coords_2d = u[:, :2] * s[:2]
+
+        min_x, max_x = float(coords_2d[:, 0].min()), float(coords_2d[:, 0].max())
+        min_y, max_y = float(coords_2d[:, 1].min()), float(coords_2d[:, 1].max())
+
+        span_x = max(max_x - min_x, 1e-5)
+        span_y = max(max_y - min_y, 1e-5)
+
+        row_coords = {}
+        for idx, row_id in enumerate(self._row_ids):
+            cx = 70.0 + float((coords_2d[idx, 0] - min_x) / span_x * 860.0)
+            cy = 70.0 + float((coords_2d[idx, 1] - min_y) / span_y * 520.0)
+            row_coords[row_id] = (round(cx, 1), round(cy, 1))
+
+        fact_by_chunk: Dict[str, List[Dict[str, Any]]] = {}
+        for f in facts:
+            fact_by_chunk.setdefault(f["chunk_id"], []).append(f)
+
+        dimension_types = set()
+        nodes = []
+
+        for c in chunks:
+            r_id = c["row_id"]
+            pos = row_coords.get(r_id, (500.0, 300.0))
+            c_facts = fact_by_chunk.get(c["chunk_id"], [])
+            for cf in c_facts:
+                dimension_types.add(cf["fact_type"])
+
+            nodes.append({
+                "id": c["chunk_id"],
+                "row_id": r_id,
+                "document_id": c["document_id"],
+                "clause_ref": c["clause_ref"] or "",
+                "page_num": c["page_num"],
+                "x": pos[0],
+                "y": pos[1],
+                "token_count": c["token_count"],
+                "text_snippet": c["text"][:140] + ("..." if len(c["text"]) > 140 else ""),
+                "facts": [
+                    {
+                        "fact_type": f["fact_type"],
+                        "value": f["value"],
+                        "confidence": f["confidence"],
+                        "status": f["status"],
+                        "quote": f["quote"],
+                    }
+                    for f in c_facts
+                ],
+                "has_claims": len(c_facts) > 0,
+            })
+
+        edges = []
+        docs: Dict[str, List[str]] = {}
+        for c in chunks:
+            docs.setdefault(c["document_id"], []).append(c["chunk_id"])
+        for doc_id, c_ids in docs.items():
+            for i in range(len(c_ids) - 1):
+                edges.append({
+                    "source": c_ids[i],
+                    "target": c_ids[i + 1],
+                    "kind": "document_sequence",
+                    "doc": doc_id,
+                })
+
+        chroma_count = self.collection.count() if (self.has_chroma and self.collection) else len(chunks)
+        return {
+            "total_chunks": len(chunks),
+            "total_facts": len(facts),
+            "embedding_dim": self.embedding_dim,
+            "vector_store": f"ChromaDB ({chroma_count} vectors indexed in collection 'odin_chunks')",
+            "chroma_status": "connected" if self.has_chroma else "offline",
+            "chroma_collection": "odin_chunks",
+            "dimensions": sorted(list(dimension_types)),
+            "nodes": nodes,
+            "edges": edges,
+        }
+

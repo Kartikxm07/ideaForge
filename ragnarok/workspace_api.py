@@ -21,7 +21,7 @@ from .agents import AGENTS, contract_warning, execute_run, latest_view as latest
 from .email_delivery import EmailDeliveryError, send_approved_alert
 from .thor_bridge import prepare_anchor, submit_anchor, verify_anchor_receipt
 from .operational_events import OperationalEvent, add_event, import_event_records, list_events
-from .upload_formats import MAX_UPLOAD_BYTES, decode_text, extract_pdf, parse_jsonl, safe_document_key
+from .upload_formats import IMAGE_EXTENSIONS, MAX_UPLOAD_BYTES, decode_text, extract_pdf, ocr_image, parse_jsonl, safe_document_key
 
 
 class Upload(BaseModel):
@@ -170,8 +170,9 @@ def install_workspace(app, store, settings, owner, session):
     async def upload_file(file: UploadFile = File(...), actor=Depends(owner)):
         filename = (file.filename or "").replace("\\", "/").split("/")[-1]
         extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        if extension not in ("txt", "pdf", "jsonl") or len(filename) > 200:
-            raise HTTPException(422, "Choose a .txt, .pdf or .jsonl file with a valid name")
+        allowed = ("txt", "pdf", "jsonl") + tuple(IMAGE_EXTENSIONS)
+        if extension not in allowed or len(filename) > 200:
+            raise HTTPException(422, "Choose a .txt, .pdf, .jsonl or image file with a valid name")
         raw = await file.read(MAX_UPLOAD_BYTES + 1)
         await file.close()
         if len(raw) > MAX_UPLOAD_BYTES:
@@ -185,6 +186,9 @@ def install_workspace(app, store, settings, owner, session):
                 content = decode_text(raw)
             elif extension == "pdf":
                 content, pages = extract_pdf(raw)
+            elif extension in IMAGE_EXTENSIONS:
+                content = ocr_image(raw, filename)
+                pages = 1
             else:
                 kind, parsed, parse_errors = parse_jsonl(raw)
                 if kind == "events":
@@ -203,8 +207,10 @@ def install_workspace(app, store, settings, owner, session):
                 if db.execute("SELECT id FROM documents WHERE owner_id=? AND (document_key=? OR content_sha256=?)", (actor, key, digest)).fetchone():
                     raise HTTPException(409, "This document or identifier already exists. Open the existing contract.")
             result = upsert_document(store, actor, key, filename, content, f"browser:{extension}")
+            media_type_map = {"txt": "text/plain", "pdf": "application/pdf", "jsonl": "application/x-ndjson"}
+            media_type = media_type_map.get(extension, f"image/{extension}")
             with store.connect() as db:
-                db.execute("INSERT INTO document_uploads(document_id,owner_id,filename,media_type,raw_sha256,raw,page_count,created_at) VALUES(?,?,?,?,?,?,?,?)", (result["id"], actor, filename, {"txt": "text/plain", "pdf": "application/pdf", "jsonl": "application/x-ndjson"}[extension], hashlib.sha256(raw).hexdigest(), raw, pages, now()))
+                db.execute("INSERT INTO document_uploads(document_id,owner_id,filename,media_type,raw_sha256,raw,page_count,created_at) VALUES(?,?,?,?,?,?,?,?)", (result["id"], actor, filename, media_type, hashlib.sha256(raw).hexdigest(), raw, pages, now()))
             return {"kind": "contract", "document_key": key, "title": filename, "pages": pages, "quarantined": len(parse_errors), "error_lines": [number for number, _, _ in parse_errors]}
         except HTTPException:
             raise
@@ -220,6 +226,12 @@ def install_workspace(app, store, settings, owner, session):
         filename = row["filename"] or row["title"] + ".txt"
         raw = row["raw"] if row["raw"] is not None else row["content"].encode("utf-8")
         return Response(content=raw, media_type=row["media_type"] or "text/plain; charset=utf-8", headers={"Content-Disposition": "inline; filename*=UTF-8''" + url_quote(filename)})
+
+    @router.get("/memory-map")
+    def memory_map(actor=Depends(owner)):
+        from thor_agent.storage import ChunkStorage
+        storage = ChunkStorage()
+        return storage.get_memory_map()
 
     @router.get("/contracts/{key}")
     def contract(key: str, actor=Depends(owner)):

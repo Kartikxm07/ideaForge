@@ -41,7 +41,7 @@ app.add_middleware(
 
 # Shared instances
 storage = ChunkStorage()
-pack_dir = os.environ.get("ODIN_PACK_DIR", r"C:\Users\athar\OneDrive\Desktop\ragnarork\dataset\Pack\odin_dev_pack")
+pack_dir = os.environ.get("ODIN_PACK_DIR", str(Path(__file__).resolve().parents[1] / "dataset" / "Pack" / "odin_dev_pack"))
 pdf_processor = PDFProcessor(pack_dir=pack_dir)
 thor_agent = ThorAgent(pack_dir=pack_dir, storage=storage)
 
@@ -157,6 +157,12 @@ async def get_chunks():
 async def get_facts():
     """Retrieve all extracted facts from SQLite."""
     return {"facts": storage.get_all_facts()}
+
+
+@app.get("/api/memory_map")
+async def get_memory_map():
+    """Retrieve 2D projected semantic memory map with Thor claims and chunks."""
+    return storage.get_memory_map()
 
 
 @app.get("/api/chunk/{chunk_id}")

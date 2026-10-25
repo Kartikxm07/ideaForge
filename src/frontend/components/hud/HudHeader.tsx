@@ -14,6 +14,7 @@ import {
   Settings,
   ChevronDown,
   Zap,
+  Layers,
 } from "lucide-react";
 import { useOdinStore } from "@/store/useOdinStore";
 
@@ -22,11 +23,11 @@ export function HudHeader() {
   const { currentDate, activeCheckpoint, setCheckpoint, openAddEvent } = useOdinStore();
 
   const navLinks = [
-    { href: "/",          label: "Onboard",     icon: FilePlus },
     { href: "/war-room",  label: "Portfolio Intelligence", icon: LayoutDashboard },
+    { href: "/odin-web",  label: "Odin Web",              icon: Layers },
     { href: "/workflow",  label: "Agent Pipeline & Review", icon: Zap },
-    { href: "/analysis",  label: "Agent Ops",   icon: Settings },
-    { href: "/reports",   label: "Reports",     icon: FileText },
+    { href: "/analysis",  label: "Agent Ops",             icon: Settings },
+    { href: "/reports",   label: "Reports",               icon: FileText },
   ];
 
   const checkpoints = [

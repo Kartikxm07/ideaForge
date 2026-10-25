@@ -26,7 +26,7 @@ from .ocr_pdf import PDFProcessor
 from .storage import ChunkStorage
 from .thor import ClauseChunk, ClauseChunker, ExtractedFact, OdinFeeder, ThorAgent, ThorExtractor
 
-PACK_DIR = Path(r"C:\Users\athar\OneDrive\Desktop\ragnarork\dataset\Pack\odin_dev_pack")
+PACK_DIR = Path(__file__).resolve().parents[1] / "dataset" / "Pack" / "odin_dev_pack"
 
 
 def run_all_tests():

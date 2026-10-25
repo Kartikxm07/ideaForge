@@ -30,7 +30,7 @@ if not logger.handlers:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 # Default pack location
-DEFAULT_PACK_DIR = r"C:\Users\athar\OneDrive\Desktop\ragnarork\dataset\Pack\odin_dev_pack"
+DEFAULT_PACK_DIR = str(Path(__file__).resolve().parents[1] / "dataset" / "Pack" / "odin_dev_pack")
 
 
 @dataclass

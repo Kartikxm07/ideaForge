@@ -75,6 +75,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     install_workspace(app, store, settings, workspace_owner, session)
 
+    @app.get("/")
+    async def root():
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/thor/")
+
     @app.get("/health/live")
     async def live():
         return {"status": "ok"}

@@ -9,6 +9,7 @@ from datetime import date
 import hashlib
 import json
 import operator
+import re
 from pathlib import Path
 from typing import Annotated, TypedDict
 
@@ -24,6 +25,8 @@ from .agents import (
 from .store import Store
 from .rag import upsert_chunks, hybrid_search, evaluate_retrieval
 from .thor_bridge import extract_with_thor
+from .norns_finance import compute_exposure, parse_ledger
+from .citation_checker import check_chunks_for_document
 
 
 MAX_MODEL_CALLS = 80
@@ -44,6 +47,12 @@ class OdinState(TypedDict, total=False):
     verdict: str
     clock_t: str
     status: str
+    # ── Gap 1: Norns financial exposure flows through state ──────────────
+    norns_exposure_usd: float
+    # ── Gap 2: Debate history accumulates across ALL rounds (no overwrite)
+    debate_history: Annotated[list[dict], operator.add]
+    # ── Gap 3: Clarification hashes break Thor infinite re-extraction loops
+    clarification_hashes: Annotated[list[str], operator.add]
 
 
 def _stable_id(run_id: str, node: str, source: str) -> str:
@@ -187,28 +196,110 @@ def build_graph(store: Store, owner: str, run_id: str, model, checkpointer=None)
             return {"errors": [_failure(store, owner, run_id, "Heimdall-1", exc)]}
 
     def norns(state: OdinState) -> dict:
+        """Parse explicit + relative dates; compute worst-case $ exposure.
+        Gap 1: Populates norns_exposure_usd in state via deterministic arithmetic.
+        Also reads Heimdall verifications from prior checkpoints into memory state
+        so shared memory = Thor extractions + Heimdall confirmed events + Norns calc."""
         try:
             terms = _items(store, owner, "agent-extraction", run_id)
+            clock_t = state.get("clock_t") or date.today().isoformat()
+
+            # ── Explicit date milestones (preserves existing behaviour) ───────
             for term in terms:
                 for due in _explicit_dates(term["citation"]["quote"]):
-                    _record(store, owner, run_id, "agent-timeline", "Norns", f"{term['id']}:{due}", {
+                    _record(store, owner, run_id, "agent-timeline", "Norns",
+                            f"{term['id']}:{due}", {
                         "document_key": term["document_key"], "date": due,
                         "description": term["value"], "citation": term["citation"],
-                        "source_tag": "sourced", "formula": "Explicit source date; calendar-day difference at selected clock",
+                        "source_tag": "sourced",
+                        "formula": "Explicit source date",
+                        "worst_case_usd": 0.0,
                     })
-            _message(store, owner, run_id, "Norns", "Loki", "Cited dates projected")
-            return {}
+
+            # ── Norns reads Heimdall verifications from prior checkpoints ─────
+            # Shared memory = Thor extractions + Heimdall events + Norns calc
+            prior_verifications = _items(store, owner, "agent-verification", run_id)
+            confirmed_count = sum(1 for v in prior_verifications if v.get("verdict") == "confirmed")
+
+            # ── Financial exposure calculation (Gap 1) ────────────────────────
+            ledger_path = (
+                Path(__file__).resolve().parents[1]
+                / "dataset" / "Pack" / "odin_dev_pack" / "bundle" / "data"
+                / "payments_ledger.csv"
+            )
+            ledger_rows: list[dict] = []
+            if ledger_path.is_file():
+                ledger_rows = parse_ledger(ledger_path.read_text(encoding="utf-8"))
+
+            milestones, total_usd = compute_exposure(
+                extractions=terms, ledger_rows=ledger_rows, clock_t=clock_t,
+            )
+
+            for ms in milestones:
+                _record(store, owner, run_id, "agent-timeline", "Norns",
+                        f"fin:{ms.milestone_id}:{clock_t}", {
+                    "document_key": ms.document_key,
+                    "date": ms.date,
+                    "description": ms.description,
+                    "citation": {
+                        "clause_ref": ms.clause_citation, "quote": ms.formula,
+                        "chunk_id": ms.milestone_id, "document_key": ms.document_key,
+                    },
+                    "source_tag": "computed",
+                    "formula": ms.formula,
+                    "worst_case_usd": ms.worst_case_usd,
+                    "event_type": ms.event_type,
+                    "risk_severity": ms.risk_severity,
+                })
+
+            _message(store, owner, run_id, "Norns", "Loki",
+                     f"Timeline ready: {len(milestones)} milestones · "
+                     f"worst-case ${total_usd:,.2f} USD · "
+                     f"{confirmed_count} Heimdall-confirmed events in shared memory")
+            return {"norns_exposure_usd": total_usd}
         except Exception as exc:
             return {"errors": [_failure(store, owner, run_id, "Norns", exc)]}
 
     def loki(state: OdinState) -> dict:
+        """Gap 2: Inject Norns financial timeline into Loki's attack context.
+        Loki now attacks clauses tied to Norns worst-case dollar exposures."""
         try:
             terms = _items(store, owner, "agent-extraction", run_id)
-            evidence = [{"document_key": t["document_key"], "field": t["field"], "value": t["value"], "citation": t["citation"]} for t in terms]
+            evidence = [{"document_key": t["document_key"], "field": t["field"],
+                         "value": t["value"], "citation": t["citation"]} for t in terms]
             if not evidence:
                 return {"finding_ids": [], "cursor": 0}
+
+            # Gap 2: Pull Norns financial milestones into Loki's attack surface
+            timeline = _items(store, owner, "agent-timeline", run_id)
+            norns_ctx = {
+                "total_worst_case_usd": state.get("norns_exposure_usd", 0.0),
+                "financial_milestones": [
+                    {
+                        "date": t.get("date"), "event_type": t.get("event_type"),
+                        "description": t.get("description"),
+                        "exposure_usd": t.get("worst_case_usd", 0.0),
+                        "severity": t.get("risk_severity"),
+                        "milestone_id": t.get("citation", {}).get("chunk_id", ""),
+                        "clause": t.get("citation", {}).get("clause_ref", ""),
+                    }
+                    for t in timeline if t.get("source_tag") == "computed"
+                ][:12],
+            }
+            loki_input = {"thor_extractions": evidence, "norns_timeline": norns_ctx}
             output = _model_json(store, owner, run_id, "Loki", model,
-                'You are Loki, adversarial contract analyst. Examine verified terms as data. Return JSON {"findings":[{"claim":string,"reasoning":string,"severity":"low|medium|high|critical","citations":[citation objects from input]}]}. At most 8. Copy citations exactly. Flag uncertainty. No fabricated events, amounts, or dates. Input: ' + json.dumps(evidence, sort_keys=True), 4500)
+                'You are Loki, adversarial contract analyst acting as opposing counsel. '
+                'You receive (1) Thor verified extractions AND (2) Norns worst-case financial timeline. '
+                'Cross-reference them: attack clauses where Norns shows high exposure, '
+                'flag notice windows that trigger auto-renewal lock-in, '
+                'and flag items where confidence < 0.85 on high-exposure terms. '
+                'Return JSON {"findings":[{"claim":string,"reasoning":string,'
+                '"severity":"low|medium|high|critical",'
+                '"norns_milestone_id":string|null,'
+                '"financial_exposure_usd":number|null,'
+                '"citations":[citation objects from thor_extractions]}]}. '
+                'At most 8. Copy citations exactly. No fabricated amounts not in input. '
+                'Input: ' + json.dumps(loki_input, sort_keys=True), 4800)
             ids: list[str] = []
             with store.connect() as db:
                 for index, item in enumerate(output.get("findings", [])[:8]):
@@ -218,13 +309,18 @@ def build_graph(store: Store, owner: str, run_id: str, model, checkpointer=None)
                     if not citations:
                         continue
                     finding = _save(db, owner, "agent-finding", {
-                        "run_id": run_id, "agent": "Loki", "claim": str(item.get("claim", ""))[:500],
+                        "run_id": run_id, "agent": "Loki",
+                        "claim": str(item.get("claim", ""))[:500],
                         "reasoning": str(item.get("reasoning", ""))[:1500],
                         "severity": item.get("severity") if item.get("severity") in ("low", "medium", "high", "critical") else "unrated",
                         "citations": citations, "source_tag": "inferred", "status": "proposed",
+                        "norns_milestone_id": str(item.get("norns_milestone_id") or "")[:20],
+                        "financial_exposure_usd": float(item.get("financial_exposure_usd") or 0.0),
                     }, _stable_id(run_id, "Loki", str(index)))
                     ids.append(finding["id"])
-            _message(store, owner, run_id, "Loki", "Heimdall", f"{len(ids)} cited challenges")
+            _message(store, owner, run_id, "Loki", "Heimdall",
+                     f"{len(ids)} cited challenges · "
+                     f"total flagged ${norns_ctx['total_worst_case_usd']:,.2f} USD")
             return {"finding_ids": ids, "cursor": 0}
         except Exception as exc:
             return {"finding_ids": [], "errors": [_failure(store, owner, run_id, "Loki", exc)]}
@@ -237,58 +333,167 @@ def build_graph(store: Store, owner: str, run_id: str, model, checkpointer=None)
         return next((x for x in _items(store, owner, "agent-finding", run_id) if x["id"] == ids[cursor]), None)
 
     def thor_clarify(state: OdinState) -> dict:
-        """Let Thor answer Loki using only the evidence already anchored to chunks."""
+        """Thor answers Loki using only evidence anchored to chunks.
+        Gap 3: Hash-based dedup — if same finding+round already answered,
+        return early to break the ChromaDB infinite re-extraction loop."""
         finding = finding_at(state)
         if not finding:
             return {}
+
+        # Gap 3 (Infinite loop fix): hash finding_id + debate_round
+        debate_round = state.get("debate_round", 0)
+        clarify_key = hashlib.sha256(
+            f"{finding['id']}:{debate_round}".encode()
+        ).hexdigest()[:16]
+        if clarify_key in state.get("clarification_hashes", []):
+            no_new = (
+                "No new evidence found in clause text — "
+                "Thor's prior answer stands. Heimdall must decide on existing evidence."
+            )
+            _message(store, owner, run_id, "Thor", "Loki", no_new, finding["id"])
+            return {
+                "debate_history": [{
+                    "round": debate_round, "agent": "Thor",
+                    "action": "dedup_skip", "finding_id": finding["id"],
+                }],
+            }
+
         try:
+            prior = [
+                c for c in _items(store, owner, "agent-clarification", run_id)
+                if c.get("finding_id") == finding["id"]
+            ]
             output = _model_json(store, owner, run_id, "Thor-clarify", model,
-                'Act as Thor\'s evidence advocate. Loki has challenged a contract term. Return JSON '
-                '{"answer":string,"supported":boolean,"citation_ids":[string]}. Use only the supplied '
-                'verified chunk citations; do not add facts, dates, events, or money. Citation IDs are the '
-                'chunk_id values. If the chunks do not answer the challenge, set supported false. Input: ' +
-                json.dumps({"finding": finding, "verified_chunks": finding["citations"]}, sort_keys=True), 1400)
+                'Act as Thor\'s evidence advocate. Loki challenged a contract term. Return JSON '
+                '{"answer":string,"supported":boolean,"citation_ids":[string]}. '
+                'Use ONLY the supplied verified chunk citations. '
+                'Do not add facts, dates, events, or money not in the citations. '
+                'If prior clarifications already covered this, acknowledge them without repeating. '
+                'If chunks do not answer the challenge, set supported=false. '
+                'Input: ' + json.dumps({
+                    "finding": finding,
+                    "verified_chunks": finding["citations"],
+                    "debate_round": debate_round,
+                    "prior_clarifications": [
+                        {"answer": c.get("answer", ""), "supported": c.get("supported")}
+                        for c in prior[-2:]
+                    ],
+                }, sort_keys=True), 1400)
             allowed = {str(c.get("chunk_id", "")) for c in finding["citations"]}
             clarification = _record(store, owner, run_id, "agent-clarification", "Thor",
-                f"{state.get('clock_t')}:{finding['id']}", {
+                f"{state.get('clock_t')}:{finding['id']}:{debate_round}", {
                     "finding_id": finding["id"],
                     "answer": str(output.get("answer", ""))[:1200],
                     "supported": bool(output.get("supported")),
                     "citation_ids": [str(x) for x in output.get("citation_ids", []) if str(x) in allowed],
                     "citations": finding["citations"],
+                    "debate_round": debate_round,
                 })
             _message(store, owner, run_id, "Thor", "Loki", clarification["answer"], finding["id"])
-            return {}
+            return {
+                "clarification_hashes": [clarify_key],
+                "debate_history": [{
+                    "round": debate_round, "agent": "Thor",
+                    "action": "clarify", "finding_id": finding["id"],
+                    "supported": bool(output.get("supported")),
+                }],
+            }
         except Exception as exc:
             return {"errors": [_failure(store, owner, run_id, "Thor-clarify", exc)]}
 
     def heimdall_2(state: OdinState) -> dict:
+        """Verify Loki claims against chunks + events.
+        Gap 4: Normalize event schema to match ChromaDB format; filter noise events.
+        Records debate_history so all rounds are preserved (fixes memory bleed)."""
         finding = finding_at(state)
         if not finding:
             return {"verdict": "insufficient"}
         try:
+            clock_t = state["clock_t"]
             with store.connect() as db:
-                rows = db.execute("SELECT event_id,occurred_at,channel,subject,body FROM operational_events WHERE owner_id=? AND substr(occurred_at,1,10)<=? ORDER BY occurred_at LIMIT 50", (owner, state["clock_t"])).fetchall()
-                events = [dict(row) for row in rows]
-            rebuttals = [m for m in _items(store, owner, "agent-message", run_id)
-                        if m.get("from") == "Loki" and m.get("payload_ref") == finding["id"]]
-            clarifications = [c for c in _items(store, owner, "agent-clarification", run_id)
-                              if c.get("finding_id") == finding["id"]]
-            output = _model_json(store, owner, run_id, "Heimdall-2", model,
-                'You are Heimdall, evidence verifier. Decide whether cited text and recorded events support this proposed risk. Return JSON {"verdict":"confirmed|challenged|insufficient","reason":string,"event_ids":[string]}. Do not assume missing events occurred. Thor and Loki statements are arguments, not evidence; verify them against chunks and event IDs. Input: ' + json.dumps({"finding": finding, "events": events, "thor_answer": clarifications[-1] if clarifications else None, "rebuttal": rebuttals[-1]["message"] if rebuttals else None, "debate_round": state.get("debate_round", 0)}, sort_keys=True), 1400)
-            verdict = output.get("verdict") if output.get("verdict") in ("confirmed", "challenged", "insufficient") else "insufficient"
-            valid = {e["event_id"] for e in events}
-            verification = _record(store, owner, run_id, "agent-verification", "Heimdall", f"{state['clock_t']}:{finding['id']}:{state.get('debate_round', 0)}", {
-                "finding_id": finding["id"], "verdict": verdict,
-                "clock_t": state["clock_t"],
-                "reason": str(output.get("reason", ""))[:1000],
-                "event_ids": [e for e in output.get("event_ids", []) if e in valid][:10],
-                "citations": finding["citations"],
+                rows = db.execute(
+                    "SELECT event_id,occurred_at,channel,subject,body,sender,recipient "
+                    "FROM operational_events WHERE owner_id=? "
+                    "AND substr(occurred_at,1,10)<=? ORDER BY occurred_at LIMIT 100",
+                    (owner, clock_t)
+                ).fetchall()
+                raw_events = [dict(row) for row in rows]
+
+            # Gap 4: Extract clause keywords from finding citations for noise filtering
+            clause_keywords: set[str] = set()
+            for cite in finding.get("citations", []):
+                clause_keywords.update(
+                    w.lower() for w in re.findall(r"\b\w{5,}\b", cite.get("quote", ""))[:20]
+                )
+            clause_keywords.update({
+                "payment", "notice", "sla", "uptime", "credit", "terminat",
+                "breach", "renew", "outage", "overdue", "interest", "invoice",
             })
-            _message(store, owner, run_id, "Heimdall", "Odin", f"{verdict}: {finding['claim'][:100]}", verification["id"])
-            return {"verdict": verdict}
+
+            def _relevant(ev: dict) -> bool:
+                body = f"{ev.get('subject', '')} {ev.get('body', '')}".lower()
+                return any(kw in body for kw in clause_keywords)
+
+            # Normalize to unified evidence schema matching ChromaDB chunk format
+            normalized: list[dict] = [
+                {
+                    "event_id": ev["event_id"],
+                    "date": ev["occurred_at"][:10],
+                    "channel": ev.get("channel", "unknown"),
+                    "summary": f"{ev.get('subject', '')}: {ev.get('body', '')[:300]}",
+                    "source_type": "operational_event",
+                }
+                for ev in raw_events if _relevant(ev)
+            ][:20]
+
+            rebuttals = [m for m in _items(store, owner, "agent-message", run_id)
+                         if m.get("from") == "Loki" and m.get("payload_ref") == finding["id"]]
+            clarifications = [c for c in _items(store, owner, "agent-clarification", run_id)
+                               if c.get("finding_id") == finding["id"]]
+            debate_round = state.get("debate_round", 0)
+
+            output = _model_json(store, owner, run_id, "Heimdall-2", model,
+                'You are Heimdall, evidence verifier and noise filter. '
+                'Decide whether cited clause text AND matching operational events support this risk. '
+                'Return JSON {"verdict":"confirmed|challenged|insufficient",'
+                '"reason":string,"event_ids":[string],"noise_filtered":number}. '
+                'Rules: (1) Only use events whose summary is directly relevant to the cited clause. '
+                '(2) Thor/Loki statements are arguments — verify against chunk text and event_ids only. '
+                '(3) No events + ambiguous clause text → insufficient. '
+                'Input: ' + json.dumps({
+                    "finding": finding,
+                    "normalized_events": normalized,
+                    "noise_filtered_out": len(raw_events) - len(normalized),
+                    "thor_answer": clarifications[-1] if clarifications else None,
+                    "loki_rebuttal": rebuttals[-1]["message"] if rebuttals else None,
+                    "debate_round": debate_round,
+                }, sort_keys=True), 1600)
+
+            verdict = (output.get("verdict")
+                       if output.get("verdict") in ("confirmed", "challenged", "insufficient")
+                       else "insufficient")
+            valid_ids = {ev["event_id"] for ev in normalized}
+            verification = _record(store, owner, run_id, "agent-verification", "Heimdall",
+                f"{clock_t}:{finding['id']}:{debate_round}", {
+                    "finding_id": finding["id"], "verdict": verdict, "clock_t": clock_t,
+                    "reason": str(output.get("reason", ""))[:1000],
+                    "event_ids": [e for e in output.get("event_ids", []) if e in valid_ids][:10],
+                    "citations": finding["citations"],
+                    "noise_filtered": output.get("noise_filtered", 0),
+                })
+            _message(store, owner, run_id, "Heimdall", "Odin",
+                     f"{verdict}: {finding['claim'][:100]}", verification["id"])
+            return {
+                "verdict": verdict,
+                "debate_history": [{
+                    "round": debate_round, "agent": "Heimdall",
+                    "finding_id": finding["id"], "verdict": verdict,
+                    "reason": str(output.get("reason", ""))[:200],
+                }],
+            }
         except Exception as exc:
-            return {"verdict": "insufficient", "errors": [_failure(store, owner, run_id, "Heimdall-2", exc)]}
+            return {"verdict": "insufficient",
+                    "errors": [_failure(store, owner, run_id, "Heimdall-2", exc)]}
 
     def odin_router(state: OdinState) -> dict:
         finding = finding_at(state)
@@ -385,27 +590,64 @@ def build_graph(store: Store, owner: str, run_id: str, model, checkpointer=None)
     debate.add_conditional_edges("tyr", next_finding, {"heimdall_2": "thor_clarify", END: END})
 
     def norns_scenario(state: OdinState) -> dict:
-        """Describe a conditional worst case from verified dates and rulings."""
+        """Build financial worst-case scenario from verified dates and rulings.
+        Gap 1: Populates real exposure_amount from Norns financial simulation.
+        Gap 5: HITL re-computation — excludes human-approved findings from open exposure."""
+        clock_t = state.get("clock_t", date.today().isoformat())
         dates = _items(store, owner, "agent-timeline", run_id)
-        rulings = [item for item in _items(store, owner, "agent-ruling", run_id)
-                   if item.get("clock_t") == state["clock_t"]]
-        elapsed = [item for item in dates if item["date"] <= state["clock_t"]]
-        upheld = [item for item in rulings if item["outcome"] == "upheld"]
-        review = [item for item in rulings if item["outcome"] == "needs_review"]
-        scenario = _record(store, owner, run_id, "agent-scenario", "Norns", state["clock_t"], {
-            "clock_t": state["clock_t"], "kind": "conditional_worst_case",
+        rulings = [r for r in _items(store, owner, "agent-ruling", run_id)
+                   if r.get("clock_t") == clock_t]
+        elapsed  = [t for t in dates if t.get("date", "") <= clock_t]
+        upheld   = [r for r in rulings if r.get("outcome") == "upheld"]
+        review   = [r for r in rulings if r.get("outcome") == "needs_review"]
+        rejected = [r for r in rulings if r.get("outcome") == "rejected"]
+
+        # Gap 1: Real financial exposure from Norns simulation
+        base_exposure = state.get("norns_exposure_usd", 0.0)
+
+        # Gap 5: HITL — subtract exposure from human-approved/rejected findings
+        with store.connect() as db:
+            resolved_rows = db.execute(
+                "SELECT json_extract(data,'$.finding_id') AS fid "
+                "FROM web_records WHERE owner_id=? AND kind='agent-ruling' "
+                "AND json_extract(data,'$.run_id')=? "
+                "AND json_extract(data,'$.human_approved') IS NOT NULL",
+                (owner, run_id)
+            ).fetchall()
+        resolved_ids: set[str] = {row[0] for row in resolved_rows if row[0]}
+
+        computed = [t for t in elapsed if t.get("source_tag") == "computed"]
+        resolved_usd = sum(
+            t.get("worst_case_usd", 0.0) for t in computed
+            if t.get("citation", {}).get("chunk_id", "") in resolved_ids
+        )
+        adjusted = max(0.0, base_exposure - resolved_usd)
+
+        scenario = _record(store, owner, run_id, "agent-scenario", "Norns", clock_t, {
+            "clock_t": clock_t, "kind": "financial_worst_case",
             "summary": (
-                f"If {len(elapsed)} elapsed cited dates represent unmet duties and "
-                f"{len(upheld)} upheld risks materialize, review the cited clauses and events. "
-                f"{len(review)} rulings still need human interpretation."
+                f"{len(elapsed)} elapsed milestones · "
+                f"{len(upheld)} upheld · {len(review)} pending human review · "
+                f"{len(rejected)} rejected · {len(resolved_ids)} human-resolved. "
+                f"Adjusted open exposure: ${adjusted:,.2f} USD "
+                f"(base ${base_exposure:,.2f} - resolved ${resolved_usd:,.2f})."
             ),
-            "elapsed_timeline_ids": [item["id"] for item in elapsed],
-            "upheld_ruling_ids": [item["id"] for item in upheld],
-            "review_ruling_ids": [item["id"] for item in review],
-            "exposure_amount": None, "currency": None,
-            "limitation": "Conditional scenario only; no verified monetary formula or settlement status.",
+            "elapsed_timeline_ids": [t["id"] for t in elapsed],
+            "upheld_ruling_ids": [r["id"] for r in upheld],
+            "review_ruling_ids": [r["id"] for r in review],
+            "resolved_finding_count": len(resolved_ids),
+            "exposure_amount": round(adjusted, 2) if adjusted > 0 else None,
+            "base_exposure_usd": round(base_exposure, 2) if base_exposure > 0 else None,
+            "resolved_exposure_usd": round(resolved_usd, 2) if resolved_usd > 0 else None,
+            "currency": "USD" if adjusted > 0 else None,
+            "limitation": (
+                "Worst-case financial projection from clause arithmetic and payment ledger. "
+                "Not a verified settlement amount or legal determination."
+            ),
         })
-        _message(store, owner, run_id, "Norns", "Odin", "Conditional worst-case scenario ready", scenario["id"])
+        _message(store, owner, run_id, "Norns", "Odin",
+                 f"Financial scenario: ${adjusted:,.2f} open exposure "
+                 f"({len(resolved_ids)} human-resolved items deducted)", scenario["id"])
         return {}
 
     def snapshot(state: OdinState) -> dict:
@@ -413,7 +655,9 @@ def build_graph(store: Store, owner: str, run_id: str, model, checkpointer=None)
             "clock_t": state.get("clock_t"),
             "extraction_count": len(_items(store, owner, "agent-extraction", run_id)),
             "finding_count": len(_items(store, owner, "agent-finding", run_id)),
-            "exposure": None,
+            "exposure": state.get("norns_exposure_usd"),  # Real $ from Norns simulation
+            "debate_rounds_completed": state.get("debate_round", 0),
+            "debate_history_length": len(state.get("debate_history", [])),
         })
         return {}
 
