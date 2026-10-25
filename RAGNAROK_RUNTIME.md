@@ -1,0 +1,33 @@
+# Ragnarok
+
+Ragnarok is a privacy-first local agent runtime under development. The current release is a runnable API and worker with persistent tasks, exact approvals, a small allowlisted tool registry, local memory, and optional Ollama planning. It is **not yet a production SaaS**. The hosted control plane, web dashboard, encrypted memory, scheduler, and general-purpose sandbox are planned work.
+
+The API binds to `127.0.0.1` and requires a bearer token. Private prompts and memory remain in the local SQLite database. The Ollama adapter accepts only a loopback HTTP origin and makes no cloud fallback.
+
+## Quick start (Python 3.11+)
+
+```powershell
+python -m pip install -e '.[test]'
+$env:RAGNAROK_API_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(48))"
+python -m ragnarok.cli migrate
+python -m ragnarok.cli doctor
+python -m ragnarok.cli api
+```
+
+In another terminal with the same token and database settings:
+
+```powershell
+python -m ragnarok.cli worker
+```
+
+The API is at `http://127.0.0.1:8000/docs`. To use local model planning, run Ollama, pull the model named by `RAGNAROK_OLLAMA_MODEL` (default `llama3.2`), then call `POST /api/v1/tasks/from-prompt`. Explicit steps sent to `POST /api/v1/tasks` work without Ollama. The worker executes only built-in tools listed at `GET /api/v1/tools`.
+
+## Test
+
+```powershell
+python -m pytest -q
+python -m compileall -q ragnarok
+```
+
+See [architecture](docs/ARCHITECTURE.md), [plan](docs/IMPLEMENTATION_PLAN.md), [data flow](docs/DATA_FLOW.md), and [threat model](docs/THREAT_MODEL.md).
+
