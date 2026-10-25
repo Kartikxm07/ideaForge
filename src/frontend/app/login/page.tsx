@@ -59,12 +59,12 @@ export default function LoginPage() {
         }
       }
 
-      setSuccess("Credentials verified. Redirecting to your dashboard.");
+      setSuccess("Credentials verified. Redirecting to company onboarding.");
       setLoading(false);
       setTimeout(() => {
-        router.push("/");
-      }, 900);
-    }, 600);
+        router.push("/onboarding");
+      }, 700);
+    }, 500);
   };
 
   return (

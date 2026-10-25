@@ -1,150 +1,177 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { HudHeader } from "@/components/hud/HudHeader";
-import { KpiStrip } from "@/components/hud/KpiStrip";
-import { TimeSlider } from "@/components/hud/TimeSlider";
-import { AlertFeedRightRail } from "@/components/hud/AlertFeedRightRail";
-import { EvidenceDrawer } from "@/components/hud/EvidenceDrawer";
-import { ClauseDiffModal } from "@/components/hud/ClauseDiffModal";
-import { AddEventModal } from "@/components/hud/AddEventModal";
-import { AddContractModal } from "@/components/hud/AddContractModal";
-import { ContractGraphView } from "@/components/views/ContractGraphView";
-import { ExposureView } from "@/components/views/ExposureView";
-import { TimelineView } from "@/components/views/TimelineView";
-import { DebateView } from "@/components/views/DebateView";
-import { ActionsView } from "@/components/views/ActionsView";
-import { TraceView } from "@/components/views/TraceView";
-import { PlanView } from "@/components/views/PlanView";
-import { useOdinStore, WarRoomTab } from "@/store/useOdinStore";
+import Link from "next/link";
 import {
-  Layers,
-  DollarSign,
-  Clock,
   Scale,
-  FileCheck,
-  Terminal,
-  Cpu,
-  FilePlus,
+  DollarSign,
+  AlertTriangle,
+  FileText,
+  Clock,
+  Layers,
+  ArrowUpRight,
+  PlusCircle,
+  ExternalLink,
 } from "lucide-react";
+import { useOdinStore } from "@/store/useOdinStore";
+import { AddContractModal } from "@/components/hud/AddContractModal";
 
-export default function WarRoomPage() {
-  const { activeTab, setActiveTab } = useOdinStore();
-  const [contractModalOpen, setContractModalOpen] = useState(false);
-
-  const navItems: { id: WarRoomTab; label: string; icon: any }[] = [
-    { id: "graph",    label: "Contract Graph",   icon: Layers },
-    { id: "exposure", label: "Risk Exposure",    icon: DollarSign },
-    { id: "timeline", label: "Timeline",         icon: Clock },
-    { id: "debate",   label: "Debate Council",   icon: Scale },
-    { id: "actions",  label: "Drafted Actions",  icon: FileCheck },
-    { id: "plan",     label: "Work Plan",        icon: Cpu },
-    { id: "trace",    label: "Telemetry",        icon: Terminal },
-  ];
-
-  const renderActiveView = () => {
-    switch (activeTab) {
-      case "graph":    return <ContractGraphView />;
-      case "exposure": return <ExposureView />;
-      case "timeline": return <TimelineView />;
-      case "debate":   return <DebateView />;
-      case "actions":  return <ActionsView />;
-      case "plan":     return <PlanView />;
-      case "trace":    return <TraceView />;
-      default:         return <ContractGraphView />;
-    }
-  };
+export default function MinimalDashboard() {
+  const { nodes, timelineEvents } = useOdinStore();
+  const [modalOpen, setModalOpen] = useState(false);
 
   return (
-    <div className="flex flex-col min-h-dvh bg-page text-[#1A1208]">
-      <HudHeader />
-
-      <main className="flex-1 max-w-[1600px] w-full mx-auto px-5 pt-5 pb-28 space-y-5">
-
-        {/* Page title row */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="heading-xl">Financial & Contract Intelligence</h1>
-            <p className="text-sm text-[#8A7355] mt-0.5">
-              Institutional exposure analytics and legal compliance solutions · Quillhub Inc.
-            </p>
+    <div className="min-h-screen bg-[#FDFBF7] text-[#18181B] flex flex-col">
+      {/* Streamlined Financial Navbar */}
+      <header className="border-b border-black/[0.06] bg-white px-8 py-3.5 flex items-center justify-between sticky top-0 z-30">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-[#D4A017] flex items-center justify-center text-white">
+            <Scale className="w-4 h-4" />
           </div>
-
-          {/* Add Contract CTA */}
-          <button
-            onClick={() => setContractModalOpen(true)}
-            className="btn-primary flex items-center gap-2 shadow-lg shadow-amber-500/20"
-          >
-            <FilePlus className="w-4 h-4" />
-            Add Contract
-          </button>
+          <div>
+            <span className="font-bold text-sm tracking-tight">ODIN</span>
+            <span className="ml-2 text-[11px] text-zinc-400 font-medium tracking-wide">
+              FINANCIAL SOLUTIONS
+            </span>
+          </div>
         </div>
 
-        {/* Separator */}
-        <div className="sep-gold" />
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#D4A017] hover:bg-[#B8880E] text-white text-xs font-semibold shadow-sm transition-all"
+          >
+            <PlusCircle className="w-3.5 h-3.5" />
+            Add Contract
+          </button>
+          <Link
+            href="/onboarding"
+            className="text-xs font-medium text-zinc-600 hover:text-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50"
+          >
+            Entity Settings
+          </Link>
+          <Link
+            href="/login"
+            className="text-xs font-medium text-zinc-500 hover:text-zinc-800"
+          >
+            Sign Out
+          </Link>
+        </div>
+      </header>
 
-        {/* KPI Strip */}
-        <KpiStrip />
-
-        {/* Main layout */}
-        <div className="flex gap-5 items-start">
-
-          {/* Left Sidebar Nav */}
-          <nav className="w-48 shrink-0 card rounded-xl p-2 space-y-0.5">
-            <p className="label-caps px-3 pt-2 pb-1.5 border-b border-[rgba(212,160,23,0.14)] mb-1">
-              Views
+      {/* Main minimal dashboard content */}
+      <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-8 space-y-6">
+        {/* Title row */}
+        <div className="flex items-baseline justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-zinc-900">Portfolio Intelligence</h1>
+            <p className="text-xs text-zinc-500 mt-1">
+              Active liability radar and contract conflict synthesis.
             </p>
-            {navItems.map((item) => {
-              const active = activeTab === item.id;
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`sidebar-item ${active ? "active" : ""}`}
-                >
-                  <Icon className={`w-4 h-4 shrink-0 ${active ? "text-amber-600" : "text-[#8A7355]"}`} />
-                  <span className="text-sm">{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+          </div>
+        </div>
 
-          {/* Center View */}
-          <div className="flex-1 min-w-0">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeTab}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-              >
-                {renderActiveView()}
-              </motion.div>
-            </AnimatePresence>
+        {/* 3 Clean Key Metrics */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white p-5 rounded-xl border border-black/[0.07] shadow-sm">
+            <div className="flex items-center justify-between text-zinc-500 text-xs font-semibold mb-2">
+              <span>TOTAL FINANCIAL EXPOSURE</span>
+              <DollarSign className="w-4 h-4 text-red-600" />
+            </div>
+            <p className="text-2xl font-bold font-mono text-zinc-900">$60,500</p>
+            <p className="text-[11px] text-zinc-400 mt-1">Gross liabilities under review</p>
           </div>
 
-          {/* Right Rail */}
-          <AlertFeedRightRail />
+          <div className="bg-white p-5 rounded-xl border border-black/[0.07] shadow-sm">
+            <div className="flex items-center justify-between text-zinc-500 text-xs font-semibold mb-2">
+              <span>UNRESOLVED CLAUSE CONFLICTS</span>
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+            </div>
+            <p className="text-2xl font-bold font-mono text-amber-700">3 Conflicts</p>
+            <p className="text-[11px] text-zinc-400 mt-1">1 Critical SLA · 2 High</p>
+          </div>
+
+          <div className="bg-white p-5 rounded-xl border border-black/[0.07] shadow-sm">
+            <div className="flex items-center justify-between text-zinc-500 text-xs font-semibold mb-2">
+              <span>ACTIVE AGREEMENTS</span>
+              <FileText className="w-4 h-4 text-emerald-600" />
+            </div>
+            <p className="text-2xl font-bold font-mono text-zinc-900">{nodes.length} Documents</p>
+            <p className="text-[11px] text-zinc-400 mt-1">Monitored across 8 counterparties</p>
+          </div>
+        </div>
+
+        {/* Simplified Agreements & Deadlines Table */}
+        <div className="bg-white border border-black/[0.07] rounded-xl shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-zinc-800">Monitored Contracts & Counterparties</h2>
+            <span className="text-xs text-zinc-400">{nodes.length} contracts loaded</span>
+          </div>
+
+          <div className="divide-y divide-zinc-100">
+            {nodes.slice(0, 6).map((node) => (
+              <div key={node.id} className="px-6 py-3.5 flex items-center justify-between hover:bg-zinc-50/50 transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-zinc-100 flex items-center justify-center text-zinc-600 font-semibold text-xs">
+                    {node.id}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-900">{node.label}</p>
+                    <p className="text-xs text-zinc-400">{node.counterparty}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {node.conflicts.length > 0 ? (
+                    <span className="text-[11px] font-semibold text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                      {node.conflicts.length} conflict{node.conflicts.length > 1 ? "s" : ""}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                      Compliant
+                    </span>
+                  )}
+                  <span className="text-xs font-mono font-medium text-zinc-600">
+                    {node.value ? `$${node.value.toLocaleString()}` : "—"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Upcoming Action Milestones */}
+        <div className="bg-white border border-black/[0.07] rounded-xl shadow-sm p-6">
+          <h2 className="text-sm font-bold text-zinc-800 mb-4">Upcoming Notice Deadlines</h2>
+          <div className="space-y-3">
+            {timelineEvents.slice(0, 3).map((event) => (
+              <div key={event.id} className="flex items-center justify-between p-3.5 rounded-lg border border-zinc-100 bg-zinc-50/60 text-xs">
+                <div className="flex items-center gap-3">
+                  <Clock className="w-4 h-4 text-amber-700" />
+                  <div>
+                    <p className="font-semibold text-zinc-900">{event.title}</p>
+                    <p className="text-[11px] text-zinc-500">{event.date} · {event.description}</p>
+                  </div>
+                </div>
+                <span className="font-medium text-amber-900 bg-amber-100/70 px-2 py-0.5 rounded text-[10px]">
+                  {event.type}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </main>
 
-      {/* Modals & Drawers */}
-      <EvidenceDrawer />
-      <ClauseDiffModal />
-      <AddEventModal />
+      {/* Add contract modal */}
       <AddContractModal
-        open={contractModalOpen}
-        onClose={() => setContractModalOpen(false)}
-        onAdd={(c) => {
-          console.log("Contract added:", c);
-        }}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onAdd={(c) => console.log("Added contract:", c)}
       />
 
-      {/* Bottom Timeline */}
-      <TimeSlider />
+      <footer className="text-center py-4 text-xs text-zinc-400 border-t border-black/[0.04]">
+        ODIN Platform · Institutional Financial Solutions
+      </footer>
     </div>
   );
 }
