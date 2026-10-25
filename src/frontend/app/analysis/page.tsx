@@ -53,8 +53,8 @@ export default function AnalysisPage() {
           </div>
 
           <Link href="/war-room">
-            <Button className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-orbitron font-bold text-xs uppercase tracking-wider px-5 shadow-lg shadow-cyan-500/20">
-              Enter War Room <ArrowRight className="w-4 h-4 ml-1.5" />
+            <Button className="bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs tracking-wider px-5 shadow-lg shadow-amber-600/20">
+              View Intelligence Dashboard <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </Link>
         </div>

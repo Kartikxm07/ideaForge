@@ -65,9 +65,9 @@ export default function WarRoomPage() {
         {/* Page title row */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="heading-xl">Contract War Room</h1>
+            <h1 className="heading-xl">Financial & Contract Intelligence</h1>
             <p className="text-sm text-[#8A7355] mt-0.5">
-              Autonomous multi-agent contract intelligence · Quillhub Inc.
+              Institutional exposure analytics and legal compliance solutions · Quillhub Inc.
             </p>
           </div>
 
