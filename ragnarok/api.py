@@ -1,11 +1,13 @@
 """Local API. Bearer token is required for every private route."""
 from hmac import compare_digest
+from datetime import date
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from .config import Settings
 from .analysis import cancel_run, create_run, run_view
 from .documents import delete_document as remove_document, search_documents, upsert_document, verify_citation
 from .model import ModelUnavailable, OllamaProvider
+from .operational_events import OperationalEvent, add_event, list_events
 from .store import Store
 from .tools import Step, TOOL_INFO
 from .workflow import approve_step, cancel_task, create_task, task_view
@@ -255,5 +257,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if result is None:
             raise HTTPException(status_code=404, detail="Analysis not found")
         return result
+
+    @app.post("/api/v1/operational-events", status_code=201)
+    async def new_operational_event(request: OperationalEvent, actor: str = Depends(owner)):
+        try:
+            created = add_event(store, actor, request)
+            return {"event_id": request.event_id, "created": created}
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/v1/operational-events")
+    async def operational_event_list(as_of: date | None = None, limit: int = Query(default=100, ge=1, le=500), actor: str = Depends(owner)):
+        with store.connect() as db:
+            return list_events(db, actor, as_of, limit)
+
+    @app.get("/api/v1/operational-events/{event_id}")
+    async def get_operational_event(event_id: str, actor: str = Depends(owner)):
+        with store.connect() as db:
+            row = db.execute("SELECT * FROM operational_events WHERE owner_id=? AND event_id=?", (actor, event_id)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Event not found")
+            return dict(row)
+
+    @app.delete("/api/v1/operational-events/{event_id}", status_code=204)
+    async def delete_operational_event(event_id: str, actor: str = Depends(owner)):
+        with store.connect() as db:
+            changed = db.execute("DELETE FROM operational_events WHERE owner_id=? AND event_id=?", (actor, event_id)).rowcount
+            if not changed:
+                raise HTTPException(status_code=404, detail="Event not found")
+            Store.audit(db, actor, "event.delete", event_id, "allowed")
+
+    @app.get("/api/v1/event-import-errors")
+    async def event_import_errors(limit: int = Query(default=100, ge=1, le=500), actor: str = Depends(owner)):
+        with store.connect() as db:
+            rows = db.execute("SELECT source_file,line_number,line_sha256,error_type,recorded_at FROM event_import_errors WHERE owner_id=? ORDER BY recorded_at DESC,line_number LIMIT ?", (actor, limit)).fetchall()
+            return [dict(row) for row in rows]
 
     return app

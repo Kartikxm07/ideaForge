@@ -14,13 +14,14 @@ The linked GitHub repository initially contained only a short `README.md`; durin
 6. Integration tests for API authorization, owner isolation, approval, idempotency, deletion, unavailable model, and worker process restart.
 7. Local Odin text ingestion, owner-scoped search, exact quote and heading verification, and deletion. The supplied local pack imported 9 text documents in a smoke test.
 8. Durable analysis runs with bounded excerpts, a local Ollama proposal adapter, independent evidence checking, stale-source handling, and a narrow offline uptime comparison. The supplied A2 and B1 contracts produced one cited numeric-difference finding without Ollama.
+9. Owner-scoped operational event ledger with staged JSONL import, UTC checkpoint queries, idempotent duplicate handling, and malformed-line quarantine. The supplied drops imported 18 valid events and quarantined one malformed line; checkpoint counts were 7, 15, and 18.
 
 ## Next increments
 
-1. Add event and ledger ingestion, effective-term resolution, and a human review workflow for findings. The current finding gate checks quotes and headings, not legal correctness.
+1. Add payment-ledger and holiday ingestion, event-to-clause correlation, effective-term resolution, and a human review workflow for findings. The current finding gate checks quotes and headings, not legal correctness.
 2. Add memory provenance/versioning, retention, full-text retrieval, local embeddings, export controls, and verified deletion of derived indexes.
 3. Build an authenticated dashboard showing real API state and events.
-4. Extend Odin ingestion to ledgers, event drops, amendments, and effective-term resolution. Current ingestion covers text contracts and company context.
+4. Extend Odin ingestion to ledgers, amendments, and effective-term resolution. Current ingestion covers text contracts, company context, and operational event drops.
 5. Add recurring automation, then a separate SaaS control plane with organization auth, Postgres, migrations, registration, billing entitlements, and opt-in sync.
 6. Add structured telemetry, security tests, dependency scanning, containers, deployment playbooks, backups, and measured performance goals.
 

@@ -10,6 +10,7 @@ from ragnarok.config import Settings
 from ragnarok.store import Store
 from ragnarok.documents import import_odin_bundle
 from ragnarok.analysis import FindingBatch, create_run, run_analysis_once
+from ragnarok.operational_events import import_event_drop
 from ragnarok.workflow import run_once
 
 
@@ -149,9 +150,11 @@ def test_schema_upgrades_existing_local_database(tmp_path):
         db.execute("PRAGMA user_version=1")
     Store(path).migrate()
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
         assert db.execute("SELECT name FROM sqlite_master WHERE name='documents'").fetchone() is not None
         assert db.execute("SELECT name FROM sqlite_master WHERE name='analysis_runs'").fetchone() is not None
+        assert db.execute("SELECT name FROM sqlite_master WHERE name='operational_events'").fetchone() is not None
+        assert db.execute("SELECT name FROM sqlite_master WHERE name='event_import_errors'").fetchone() is not None
 
 
 def test_evidence_checked_analysis_rejects_bad_quotes_and_stales_on_update(tmp_path):
@@ -243,4 +246,51 @@ def test_citation_can_match_later_identical_quote(tmp_path):
     result = client.post("/api/v1/citations/verify", headers=HEADERS, json={"document_key": "D", "clause_ref": "Section B", "quote": "Same sentence."}).json()
     assert result["verified"] is True
     assert result["heading"] == "Section B — Second"
+
+
+def test_event_drops_are_atomic_idempotent_and_checkpointed(tmp_path):
+    path = tmp_path / "runtime.sqlite3"
+    alice = LocalClient(create_app(settings(path)))
+    bob = LocalClient(create_app(settings(path, "bob")))
+
+    def event(event_id, timestamp, subject):
+        return {"event_id": event_id, "timestamp": timestamp, "channel": "email", "from": "Sender", "to": "Recipient", "subject": subject, "body": "Event body"}
+
+    first = tmp_path / "drop1.jsonl"
+    first.write_text(json.dumps(event("E-01", "2027-01-22T09:30:00Z", "January notice")) + "\n", encoding="utf-8")
+    second = tmp_path / "drop2.jsonl"
+    second.write_text(json.dumps(event("E-02", "2027-06-01T15:00:00Z", "June incident")) + "\n", encoding="utf-8")
+    assert import_event_drop(Store(path), "alice", first) == {"records": 1, "created": 1, "duplicates": 0, "quarantined": 0}
+    assert import_event_drop(Store(path), "alice", first) == {"records": 1, "created": 0, "duplicates": 1, "quarantined": 0}
+    assert import_event_drop(Store(path), "alice", second)["created"] == 1
+    march = alice.get("/api/v1/operational-events", headers=HEADERS, params={"as_of": "2027-03-15"}).json()
+    assert [row["event_id"] for row in march] == ["E-01"]
+    assert len(alice.get("/api/v1/operational-events", headers=HEADERS).json()) == 2
+    assert bob.get("/api/v1/operational-events", headers=HEADERS).json() == []
+    assert bob.get("/api/v1/operational-events/E-01", headers=HEADERS).status_code == 404
+
+    conflicting = tmp_path / "conflict.jsonl"
+    conflicting.write_text("\n".join([
+        json.dumps(event("E-03", "2027-07-01T00:00:00Z", "New")),
+        json.dumps(event("E-01", "2027-01-22T09:30:00Z", "Changed")),
+    ]) + "\n", encoding="utf-8")
+    import pytest
+    with pytest.raises(ValueError):
+        import_event_drop(Store(path), "alice", conflicting)
+    assert alice.get("/api/v1/operational-events/E-03", headers=HEADERS).status_code == 404
+    assert alice.delete("/api/v1/operational-events/E-01", headers=HEADERS).status_code == 204
+    assert alice.get("/api/v1/operational-events/E-01", headers=HEADERS).status_code == 404
+
+
+def test_malformed_event_line_is_quarantined_without_losing_valid_records(tmp_path):
+    path = tmp_path / "runtime.sqlite3"
+    client = LocalClient(create_app(settings(path)))
+    drop = tmp_path / "drop.jsonl"
+    valid = {"event_id": "E-18", "timestamp": "2027-07-01T08:00:00Z", "channel": "email", "from": "A", "to": "B", "subject": "Invoice", "body": "Issued"}
+    drop.write_text(json.dumps(valid) + "\nnot json\n", encoding="utf-8")
+    assert import_event_drop(Store(path), "alice", drop) == {"records": 2, "created": 1, "duplicates": 0, "quarantined": 1}
+    assert import_event_drop(Store(path), "alice", drop) == {"records": 2, "created": 0, "duplicates": 1, "quarantined": 1}
+    errors = client.get("/api/v1/event-import-errors", headers=HEADERS).json()
+    assert len(errors) == 1 and errors[0]["line_number"] == 2 and errors[0]["error_type"] == "JSONDecodeError"
+    assert client.get("/api/v1/operational-events/E-18", headers=HEADERS).status_code == 200
 

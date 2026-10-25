@@ -20,9 +20,13 @@ All `/api/v1` routes require `Authorization: Bearer <RAGNAROK_API_TOKEN>`. The C
 | `POST /api/v1/analyses` | Queue an Ollama or deterministic finding run; accepts `Idempotency-Key` |
 | `GET /api/v1/analyses`, `GET /api/v1/analyses/{id}` | Inspect owned runs and evidence-checked findings |
 | `POST /api/v1/analyses/{id}/cancel` | Cancel a queued finding run |
+| `GET/POST /api/v1/operational-events`, `GET/DELETE /api/v1/operational-events/{id}` | Inspect, create, and delete owned operational events |
+| `GET /api/v1/event-import-errors` | Inspect malformed JSONL line numbers and hashes without raw content |
 | `GET /api/v1/audit` | Inspect action metadata without raw prompt logging |
 
 The API does not stream SSE yet. Clients can poll task events using the last seen event ID and analysis runs by ID. Model and document parsing errors are returned without internal tracebacks. Authentication is a single local token, not a cloud account system. Analysis findings are evidence-checked hypotheses, not validated legal opinions.
+
+`GET /api/v1/operational-events?as_of=YYYY-MM-DD` includes events through the end of that date in UTC. Event-drop files are ingested with the CLI, one drop at a time.
 
 Example local analysis request after importing the Odin pack:
 

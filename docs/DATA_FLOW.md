@@ -8,6 +8,7 @@
 | Worker → SQLite | Step status, output, events | Local polling | Same database | Transactional results; no external queue |
 | Odin bundle → local runtime | Contract `.txt` files and company context | Explicit `ingest-odin` command | SQLite documents table | Paths constrained to bundle; 2 MB per document; no remote transfer |
 | Analysis worker → SQLite | Candidate findings with exact citations and source hashes | Explicit analysis run | Analysis and findings tables | Unsupported citations rejected; source changes mark findings stale |
+| Event-drop JSONL → local runtime | Operational communications and incidents | Explicit `ingest-events` command | Operational event ledger | Stable IDs deduplicated; malformed lines recorded by hash and line number |
 | Local runtime → SaaS | None | Never in current implementation | None | SaaS control plane not implemented |
 
 The local database is not encrypted by this application. The operator must protect the host account and storage. Task prompts, tool results, and imported source text are intentionally retained for inspection. Memory and document deletion remove their primary rows; there is no derived index or cache in this release. SQLite WAL files may persist until checkpointing, and backups remain the operator's responsibility. Do not place the database in a shared folder without understanding its access controls.

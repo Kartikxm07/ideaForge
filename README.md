@@ -3,7 +3,9 @@
 > **Beyond contract summaries. From static legal documents to a living, evidence-backed risk radar.**
 
 **Hackathon:** Quillhub Autonomous Contract Intelligence Challenge — *Trial of the Nine Realms*  
-**Project status:** Proposed architecture and implementation roadmap (features described below are targets, not claims of a completed build).
+**Project status:** Architecture roadmap. A working local runtime milestone is documented in [RAGNAROK_RUNTIME.md](RAGNAROK_RUNTIME.md); the multi-agent system described below remains a target.
+
+The implemented runtime currently provides durable tasks, local memory, Ollama-backed or deterministic evidence-checked finding runs, contract text ingestion, and staged operational event imports. Its finding status confirms source quotes and headings, not legal conclusions. See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) for the exact boundary between working code and planned features.
 
 ## The Problem
 

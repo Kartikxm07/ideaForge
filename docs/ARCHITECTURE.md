@@ -18,6 +18,8 @@ The local runtime owns prompts, plans, memories, approvals, events, source docum
 
 An analysis run selects one to three owned documents and a focus phrase. The worker builds bounded excerpts, then invokes the configured local provider. Proposed citations are checked against the current source text and heading inside a transaction. Unsupported proposals are counted as rejected. Findings record the source hash and are labeled `EVIDENCE_CHECKED`; source changes mark them stale. A narrow deterministic uptime comparison supports offline demonstrations. See [ADR 0003](ADR/0003-evidence-gate.md).
 
+Operational events have a separate owner-scoped ledger. Each event has a stable source ID and normalized UTC timestamp. JSONL imports validate records before writing, skip exact duplicates, reject changed content for the same ID, and quarantine malformed lines without storing their raw text in the error table. Checkpoint queries filter by end-of-day UTC.
+
 This is a single-user local runtime with an owner identifier for data isolation tests. It does not offer real multi-user authentication or a cloud control plane. The API is bound to loopback by the CLI. Directly deploying it to a public network is unsupported.
 
 ## Decisions

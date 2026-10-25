@@ -32,6 +32,15 @@ This imports the contract `.txt` files and company context, preserving their sou
 
 Create a contract finding run with `POST /api/v1/analyses` using `question`, `focus`, `document_keys`, and `provider_kind`. The default `ollama` provider proposes hypotheses from bounded source excerpts; every citation must pass the exact-text gate before a finding is stored. `deterministic` is an offline comparison limited to uptime percentages in two commitment clauses. The worker processes the run, and `GET /api/v1/analyses/{id}` returns its state and evidence. Findings marked `EVIDENCE_CHECKED` have verified quote locations, **not verified legal conclusions**. Updating a source marks its runs stale; deleting a source removes runs derived from it.
 
+Import operational event drops separately to preserve their arrival sequence:
+
+```powershell
+python -m ragnarok.cli ingest-events --file 'C:\path\to\odin_dev_pack\bundle\events\events_drop1.jsonl'
+python -m ragnarok.cli ingest-events --file 'C:\path\to\odin_dev_pack\bundle\events\events_drop2.jsonl'
+```
+
+`GET /api/v1/operational-events?as_of=2027-03-15` lists events through a simulated checkpoint. Reimporting a drop skips identical event IDs. Malformed lines are quarantined with line numbers and hashes at `GET /api/v1/event-import-errors`; the valid records continue to import. The supplied pack contains one malformed line in Drop 2.
+
 ## Test
 
 ```powershell

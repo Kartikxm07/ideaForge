@@ -10,9 +10,10 @@ from .workflow import run_once
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="ragnarok")
-    parser.add_argument("command", choices=["api", "worker", "migrate", "doctor", "ingest-odin"])
+    parser.add_argument("command", choices=["api", "worker", "migrate", "doctor", "ingest-odin", "ingest-events"])
     parser.add_argument("--once", action="store_true", help="Process at most one step")
     parser.add_argument("--bundle", type=Path, help="Explicit path to Odin bundle for ingest-odin")
+    parser.add_argument("--file", type=Path, help="JSONL event drop for ingest-events")
     args = parser.parse_args()
     settings = Settings.from_env()
     store = Store(settings.db_path)
@@ -40,6 +41,11 @@ def main() -> None:
             parser.error("ingest-odin requires --bundle")
         imported = import_odin_bundle(store, settings.owner_id, args.bundle)
         print(f"Imported {len(imported)} text documents")
+    elif args.command == "ingest-events":
+        from .operational_events import import_event_drop
+        if args.file is None:
+            parser.error("ingest-events requires --file")
+        print(import_event_drop(store, settings.owner_id, args.file))
     else:
         print("Database migration complete")
 

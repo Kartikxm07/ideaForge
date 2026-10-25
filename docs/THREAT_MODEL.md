@@ -19,6 +19,7 @@ Assets are the bearer token, local prompts, plans, memories, workflow results, a
 | Fabricated legal citation | Exact quote and heading are checked against stored source text and its hash | This verifies text location, not legal reasoning or current contractual effect |
 | Model-generated false legal conclusion | Model output is typed, bounded, and stored as a candidate with an evidence-only status | A human reviewer and effective-term engine are still required |
 | Stale source cited as current | Hashes captured at run creation and rechecked before commit; updates mark findings stale | External copies and exports must retain source hashes |
+| Malformed or duplicate event delivery | Bounded JSONL parser, UTC timestamps, unique owner/event ID, transaction rollback on changed duplicates, quarantine for malformed lines | Event meaning and contract relevance still need independent analysis |
 
 The current runtime is suitable for local development and demonstrations, not untrusted public multi-user hosting. Before adding SaaS access: use independent identity verification, tenant membership checks, rate limiting, CSRF-safe browser auth, TLS, abuse controls, encryption key management, and deeper security testing.
 
