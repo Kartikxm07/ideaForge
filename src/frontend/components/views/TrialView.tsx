@@ -29,6 +29,7 @@ import {
   Eye,
   Loader2,
   X,
+  Database,
 } from "lucide-react";
 import {
   trialApi,
@@ -38,6 +39,7 @@ import {
   type OdinRuling,
   type WorldFeedItem,
 } from "@/lib/odin-api";
+import { RagVaultPanel } from "@/components/views/RagVaultPanel";
 
 export function TrialView() {
   const [trial, setTrial] = useState<TrialResult | null>(null);
@@ -48,7 +50,7 @@ export function TrialView() {
     "What is our commercial exposure across enterprise contracts and infrastructure outages as of Nov 15, 2026?"
   );
   const [asOfDate, setAsOfDate] = useState("2026-11-15");
-  const [selectedSubTab, setSelectedSubTab] = useState<"trial" | "exposure" | "briefing" | "memories">("trial");
+  const [selectedSubTab, setSelectedSubTab] = useState<"trial" | "exposure" | "briefing" | "memories" | "rag">("trial");
 
   // Evidence click-through modal (FR7.4)
   const [evidenceModal, setEvidenceModal] = useState<{
@@ -341,6 +343,18 @@ export function TrialView() {
           >
             <Layers className="w-4 h-4" />
             <span>FR6 Agent Memories</span>
+          </button>
+
+          <button
+            onClick={() => setSelectedSubTab("rag")}
+            className={`px-4 py-2 rounded-xl text-xs font-rajdhani font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${
+              selectedSubTab === "rag"
+                ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30"
+                : "border border-slate-800 bg-slate-900/40 text-slate-400 hover:text-white"
+            }`}
+          >
+            <Database className="w-4 h-4" />
+            <span>RAG Vault</span>
           </button>
         </div>
 
@@ -970,6 +984,11 @@ export function TrialView() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* ── TAB 5: RAG Vault ──────────────────────────────────────────────── */}
+      {selectedSubTab === "rag" && (
+        <RagVaultPanel trialData={trial} />
       )}
 
       {/* ── FR7.4: Evidence Modal (Full Document View with Quote Highlight) ── */}

@@ -304,4 +304,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             rows = db.execute("SELECT source_file,line_number,line_sha256,error_type,recorded_at FROM event_import_errors WHERE owner_id=? ORDER BY recorded_at DESC,line_number LIMIT ?", (actor, limit)).fetchall()
             return [dict(row) for row in rows]
 
+    try:
+        from thor_agent.server import app as thor_app
+        app.mount("/thor", thor_app)
+    except Exception:
+        pass
+
     return app

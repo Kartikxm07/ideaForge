@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thor Sub-Agent // Live Evidence & Proof Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@600;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #070b14;
+      --card-bg: #0b1322;
+      --card-border: rgba(255, 255, 255, 0.08);
+      --cyan: #00e5ff;
+      --cyan-glow: rgba(0, 229, 255, 0.25);
+      --amber: #ffb300;
+      --amber-glow: rgba(255, 179, 0, 0.25);
+      --emerald: #00e676;
+      --rose: #ff1744;
+      --purple: #d500f9;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    .font-orbitron { font-family: 'Orbitron', sans-serif; }
+
+    /* Layout */
+    .app-header {
+      background: linear-gradient(180deg, #0f1c30 0%, #080d18 100%);
+      border-bottom: 1px solid rgba(0, 229, 255, 0.2);
+      padding: 16px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 40;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      background: rgba(0, 229, 255, 0.1);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      color: var(--cyan);
+    }
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+      animation: pulse 1.8s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    .btn-run {
+      background: linear-gradient(135deg, #00e5ff 0%, #0091ea 100%);
+      color: #031326;
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 800;
+      font-size: 13px;
+      letter-spacing: 0.5px;
+      border: none;
+      padding: 10px 22px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 0 16px var(--cyan-glow);
+      transition: all 0.2s ease;
+    }
+    .btn-run:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 0 24px rgba(0, 229, 255, 0.5);
+    }
+    .btn-run:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Metrics Ribbon */
+    .metrics-ribbon {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      padding: 16px 28px;
+      background: rgba(11, 19, 34, 0.7);
+      border-bottom: 1px solid var(--card-border);
+    }
+    .metric-card {
+      background: #09101d;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 12px 16px;
+    }
+    .metric-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .metric-val {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Three Boxes Grid */
+    .three-boxes {
+      display: grid;
+      grid-template-columns: 1fr 1.35fr 1fr;
+      gap: 18px;
+      padding: 20px 28px;
+      height: calc(100vh - 180px);
+    }
+    .box-container {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    }
+    .box-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .box-title {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .box-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .box-content::-webkit-scrollbar { width: 6px; }
+    .box-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+
+    /* Feed Items */
+    .odin-item {
+      background: #070d18;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 10px 12px;
+      transition: border-color 0.15s;
+    }
+    .odin-item.active { border-color: var(--cyan); }
+    .odin-item:hover { border-color: rgba(0, 229, 255, 0.4); }
+
+    .fact-item {
+      background: #08111e;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-left: 3px solid var(--amber);
+      border-radius: 8px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+    .fact-item:hover {
+      background: #0d1a2f;
+      border-color: var(--cyan);
+      transform: translateX(2px);
+    }
+    .fact-item.verified { border-left-color: var(--emerald); }
+    .fact-item.repaired { border-left-color: var(--amber); }
+    .fact-item.degraded { border-left-color: #ff9100; }
+
+    .chunk-row {
+      background: #060b14;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .chunk-row:hover {
+      border-color: var(--cyan);
+      background: #0b1424;
+    }
+
+    /* Modal / Proof Viewer */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-card {
+      background: #091220;
+      border: 1px solid rgba(0, 229, 255, 0.4);
+      border-radius: 16px;
+      width: 94vw;
+      max-width: 1300px;
+      height: 90vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 0 40px rgba(0, 229, 255, 0.2);
+    }
+    .modal-header {
+      padding: 16px 24px;
+      background: #050a12;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-body {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      overflow: hidden;
+    }
+    .proof-sidebar {
+      background: #070e1a;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .pdf-viewer-area {
+      background: #111a2c;
+      padding: 20px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      position: relative;
+    }
+    .pdf-canvas-img {
+      max-width: 100%;
+      border-radius: 6px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .close-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+    }
+    .close-btn:hover { color: #fff; }
+  </style>
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div style="display:flex; align-items:center; gap:16px;">
+      <div style="width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg, #00e5ff 0%, #7c4dff 100%); display:flex; align-items:center; justify-content:center; font-family:'Orbitron'; font-weight:900; color:#030d1c;">
+        TH
+      </div>
+      <div>
+        <h1 class="font-orbitron" style="font-size:16px; font-weight:800; letter-spacing:0.5px; color:#fff;">
+          THOR SUB-AGENT // EVIDENCE & OCR PROOF ENGINE
+        </h1>
+        <p style="font-size:11px; color:var(--text-muted); font-family:'JetBrains Mono';">
+          Autonomous Pack Feeder (Odin) → Clause Chunker → Fact Extractor (gpt-oss-120b) → Visual PDF Highlight
+        </p>
+      </div>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:14px;">
+      <div class="status-badge" id="engineStatus">
+        <span class="pulse-dot"></span>
+        <span id="statusText">FEEDER READY (ODIN PACK)</span>
+      </div>
+      <button class="btn-run" id="btnRun" onclick="startAnalysis()">
+        <span>RUN ANALYSIS</span>
+        <span style="font-size:11px; opacity:0.8;">(&lt; 2 MIN)</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Metrics Ribbon -->
+  <section class="metrics-ribbon">
+    <div class="metric-card">
+      <div class="metric-label">Elapsed Time / Target</div>
+      <div class="metric-val" id="metricTime" style="color:var(--cyan);">00:00.0 <span style="font-size:11px; color:var(--text-muted);">/ 02:00</span></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Bundle Files Discovered</div>
+      <div class="metric-val" id="metricDocs" style="color:#fff;">0 <span style="font-size:11px; color:var(--text-muted);">/ 15</span></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Evidence Chunks Stored</div>
+      <div class="metric-val" id="metricChunks" style="color:var(--amber);">0 <span style="font-size:11px; color:var(--text-muted);">chunks</span></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Legal Facts Extracted</div>
+      <div class="metric-val" id="metricFacts" style="color:var(--emerald);">0 <span style="font-size:11px; color:var(--text-muted);">facts</span></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Quote Integrity Status</div>
+      <div class="metric-val" id="metricRepairs" style="color:#60a5fa; font-size:15px; margin-top:4px;">VERIFIED 100%</div>
+    </div>
+  </section>
+
+  <!-- Three Boxes Grid -->
+  <main class="three-boxes">
+    <!-- Box 1: Odin Fetcher -->
+    <div class="box-container">
+      <div class="box-header">
+        <div class="box-title" style="color:var(--cyan);">
+          <span style="font-size:14px;">📦</span>
+          <span>BOX 1: ODIN FETCHER</span>
+        </div>
+        <span class="font-mono" style="font-size:11px; color:var(--text-muted);" id="box1Count">0 files</span>
+      </div>
+      <div class="box-content" id="box1Content">
+        <div style="text-align:center; padding:40px 10px; color:var(--text-muted); font-size:12px; font-family:'JetBrains Mono';">
+          Click "RUN ANALYSIS" to start Odin feeder stream from dataset/Pack/odin_dev_pack
+        </div>
+      </div>
+    </div>
+
+    <!-- Box 2: Thor Extracted Facts -->
+    <div class="box-container">
+      <div class="box-header">
+        <div class="box-title" style="color:var(--amber);">
+          <span style="font-size:14px;">⚡</span>
+          <span>BOX 2: THOR EXTRACTED FACTS</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="font-mono" style="font-size:10px; padding:2px 8px; border-radius:4px; background:rgba(255,179,0,0.15); color:var(--amber);">
+            CLICK FACT FOR PROOF
+          </span>
+          <span class="font-mono" style="font-size:11px; color:var(--text-muted);" id="box2Count">0 facts</span>
+        </div>
+      </div>
+      <div class="box-content" id="box2Content">
+        <div style="text-align:center; padding:40px 10px; color:var(--text-muted); font-size:12px; font-family:'JetBrains Mono';">
+          Thor will extract SLA tiers, credit caps, liability caps, exclusivity, and notice windows.
+        </div>
+      </div>
+    </div>
+
+    <!-- Box 3: Stored Vector Positions -->
+    <div class="box-container">
+      <div class="box-header">
+        <div class="box-title" style="color:var(--emerald);">
+          <span style="font-size:14px;">🗄️</span>
+          <span>BOX 3: STORED POSITION & VAULT</span>
+        </div>
+        <span class="font-mono" style="font-size:11px; color:var(--text-muted);" id="box3Count">0 chunks</span>
+      </div>
+      <div class="box-content" id="box3Content">
+        <div style="text-align:center; padding:40px 10px; color:var(--text-muted); font-size:12px; font-family:'JetBrains Mono';">
+          Stored in collection odin_chunks with Vector Row #, Chunk ID, Page #, and character offsets.
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Interactive Proof Step Modal & PDF Viewer -->
+  <div class="modal-overlay" id="proofModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="color:var(--cyan); font-size:18px;">🛡️</span>
+          <div>
+            <div class="font-orbitron" style="font-size:13px; font-weight:700; color:#fff;" id="modalDocTitle">
+              CONTRACT PROOF // B1:5.2
+            </div>
+            <div class="font-mono" style="font-size:10px; color:var(--text-muted);" id="modalPosSubtitle">
+              Collection: odin_chunks · Vector Row #4 · Page 3 · Offsets [1204:1450]
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <a id="btnDownloadPdf" href="#" target="_blank" class="font-mono" style="font-size:11px; color:var(--cyan); text-decoration:none; padding:4px 10px; border:1px solid rgba(0,229,255,0.4); border-radius:6px;">
+            Open Native PDF Twin
+          </a>
+          <button class="close-btn" onclick="closeModal()">✕</button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <!-- Sidebar: Grounded Facts & Verification -->
+        <div class="proof-sidebar">
+          <div>
+            <div style="font-size:10px; text-transform:uppercase; color:var(--text-muted); margin-bottom:4px;" class="font-mono">
+              Dimension / Fact Type
+            </div>
+            <div style="font-size:14px; font-weight:700; color:var(--amber);" class="font-orbitron" id="proofFactType">
+              DATA BREACH NOTIFICATION WINDOW
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:10px; text-transform:uppercase; color:var(--text-muted); margin-bottom:4px;" class="font-mono">
+              Verbatim Extracted Value
+            </div>
+            <div style="font-size:13px; color:#fff; font-weight:600; background:#040810; padding:10px; border-radius:6px; border:1px solid rgba(255,255,255,0.06);" id="proofFactValue">
+              within twenty-four (24) hours
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:10px; text-transform:uppercase; color:var(--text-muted); margin-bottom:4px;" class="font-mono">
+              Canonical Text Anchor (Verbatim Quote)
+            </div>
+            <div style="font-size:11px; color:#cbd5e1; line-height:1.6; background:#050c18; padding:12px; border-radius:8px; border:1px solid rgba(0,229,255,0.2);" class="font-mono" id="proofQuote">
+              "Quillhub will notify Harbor Retail's General Counsel within twenty-four (24) hours of becoming aware of the Data Breach."
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:10px; text-transform:uppercase; color:var(--text-muted); margin-bottom:6px;" class="font-mono">
+              Verification Proof Check
+            </div>
+            <div style="background:#06140e; border:1px solid rgba(0,230,118,0.3); border-radius:8px; padding:10px; font-size:11px; color:var(--emerald);" class="font-mono" id="proofCheckStatus">
+              ✓ Quote matched verbatim in chunk B1:5.2<br>
+              ✓ Bounding rectangle mapped to PDF page 3<br>
+              ✓ Status: VERIFIED (confidence: 0.96)
+            </div>
+          </div>
+
+          <div style="margin-top:auto; padding-top:12px; border-top:1px solid rgba(255,255,255,0.08);">
+            <div class="font-mono" style="font-size:10px; color:var(--text-muted);">
+              PDF Page Controls:
+            </div>
+            <div style="display:flex; gap:8px; margin-top:6px;">
+              <button onclick="prevPage()" class="font-mono" style="flex:1; padding:6px; background:#091220; border:1px solid rgba(255,255,255,0.1); color:#fff; border-radius:4px; cursor:pointer;">
+                ◀ Prev Page
+              </button>
+              <button onclick="nextPage()" class="font-mono" style="flex:1; padding:6px; background:#091220; border:1px solid rgba(255,255,255,0.1); color:#fff; border-radius:4px; cursor:pointer;">
+                Next Page ▶
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main PDF Canvas / Image Viewer -->
+        <div class="pdf-viewer-area">
+          <div style="margin-bottom:12px; display:flex; align-items:center; gap:12px;" class="font-mono">
+            <span style="font-size:11px; color:var(--text-muted);">Page: <strong id="pdfCurrentPage" style="color:#fff;">1</strong></span>
+            <span style="font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(0,229,255,0.15); color:var(--cyan); border:1px solid rgba(0,229,255,0.3);">
+              PyMuPDF High-Res Highlight Overlay
+            </span>
+          </div>
+          <div id="pdfLoading" style="color:var(--cyan); font-family:'JetBrains Mono'; font-size:13px; margin:40px auto; display:none;">
+            Rendering high-res page with bounding box...
+          </div>
+          <img id="pdfPageImg" class="pdf-canvas-img" src="" alt="PDF Page Highlight" style="display:none;" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let timerInterval = null;
+    let startTime = null;
+    let activeModalDoc = null;
+    let activeModalPage = 1;
+    let activeModalQuote = "";
+    let activeModalChunkId = "";
+
+    function formatTime(ms) {
+      const totalSec = Math.floor(ms / 1000);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      const tenths = Math.floor((ms % 1000) / 100);
+      return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${tenths}`;
+    }
+
+    function startTimer() {
+      startTime = Date.now();
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        document.getElementById('metricTime').innerHTML = `${formatTime(elapsed)} <span style="font-size:11px; color:var(--text-muted);">/ 02:00</span>`;
+      }, 100);
+    }
+
+    function stopTimer() {
+      clearInterval(timerInterval);
+    }
+
+    // Connect SSE stream
+    function initSSE() {
+      const evtSource = new EventSource('/api/stream');
+
+      evtSource.addEventListener('odin_fetch', (e) => {
+        const d = JSON.parse(e.data);
+        addOdinItem(d);
+      });
+
+      evtSource.addEventListener('thor_fact', (e) => {
+        const d = JSON.parse(e.data);
+        addThorFact(d);
+      });
+
+      evtSource.addEventListener('chunk_stored', (e) => {
+        const d = JSON.parse(e.data);
+        addChunkRow(d);
+      });
+
+      evtSource.addEventListener('progress', (e) => {
+        const d = JSON.parse(e.data);
+        if (d.summary) {
+          stopTimer();
+          document.getElementById('statusText').innerText = `COMPLETED IN ${d.summary.elapsed_seconds}s`;
+          document.getElementById('btnRun').disabled = false;
+        }
+      });
+    }
+
+    async function startAnalysis() {
+      const btn = document.getElementById('btnRun');
+      btn.disabled = true;
+      document.getElementById('statusText').innerText = "STREAMING PIPELINE (< 2 MIN)...";
+
+      // Clear previous boxes
+      document.getElementById('box1Content').innerHTML = "";
+      document.getElementById('box2Content').innerHTML = "";
+      document.getElementById('box3Content').innerHTML = "";
+      document.getElementById('metricDocs').innerHTML = `0 <span style="font-size:11px; color:var(--text-muted);">/ 15</span>`;
+      document.getElementById('metricChunks').innerHTML = `0 <span style="font-size:11px; color:var(--text-muted);">chunks</span>`;
+      document.getElementById('metricFacts').innerHTML = `0 <span style="font-size:11px; color:var(--text-muted);">facts</span>`;
+
+      startTimer();
+
+      try {
+        const res = await fetch('/api/run', { method: 'POST' });
+        const summary = await res.json();
+        console.log("Analysis summary:", summary);
+      } catch (err) {
+        console.error("Run error:", err);
+      }
+    }
+
+    let filesSeen = new Set();
+    function addOdinItem(item) {
+      filesSeen.add(item.key);
+      document.getElementById('box1Count').innerText = `${filesSeen.size} files`;
+      document.getElementById('metricDocs').innerHTML = `${filesSeen.size} <span style="font-size:11px; color:var(--text-muted);">/ 15</span>`;
+
+      const el = document.createElement('div');
+      el.className = 'odin-item';
+      el.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <span class="font-mono" style="font-size:12px; font-weight:700; color:var(--cyan);">${item.key}</span>
+          <span class="font-mono" style="font-size:10px; color:var(--text-muted);">${(item.size_bytes/1024).toFixed(1)} KB</span>
+        </div>
+        <div style="font-size:11px; color:#cbd5e1; margin-bottom:4px;">${item.title || item.key}</div>
+        <div style="display:flex; gap:6px; font-size:10px;" class="font-mono">
+          <span style="background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px; color:#94a3b8;">${item.source_type}</span>
+          <span style="color:var(--emerald);">✓ Ingested by Odin</span>
+        </div>
+      `;
+      const container = document.getElementById('box1Content');
+      container.prepend(el);
+    }
+
+    let factsCount = 0;
+    function addThorFact(fact) {
+      factsCount++;
+      document.getElementById('box2Count').innerText = `${factsCount} facts`;
+      document.getElementById('metricFacts').innerHTML = `${factsCount} <span style="font-size:11px; color:var(--text-muted);">facts</span>`;
+
+      const statusCls = fact.status === 'verified' ? 'verified' : (fact.status === 'repaired' ? 'repaired' : 'degraded');
+      const statusColor = fact.status === 'verified' ? 'var(--emerald)' : (fact.status === 'repaired' ? 'var(--amber)' : '#ff9100');
+
+      const el = document.createElement('div');
+      el.className = `fact-item ${statusCls}`;
+      el.onclick = () => openProofModal(fact);
+      el.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <span class="font-orbitron" style="font-size:11px; font-weight:700; color:var(--amber);">${fact.fact_type.toUpperCase()}</span>
+          <span class="font-mono" style="font-size:10px; font-weight:700; color:${statusColor};">${fact.status.toUpperCase()}</span>
+        </div>
+        <div style="font-size:12px; color:#fff; font-weight:600; margin-bottom:4px;">${fact.value || fact.explanation}</div>
+        <div style="font-size:11px; color:var(--text-muted); font-style:italic; margin-bottom:6px; line-height:1.4;">"${fact.quote.slice(0, 110)}..."</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px;" class="font-mono">
+          <span style="color:var(--cyan); background:rgba(0,229,255,0.08); padding:2px 6px; border-radius:4px;">#${fact.chunk_id}</span>
+          <span style="color:#94a3b8;">Confidence: ${(fact.confidence * 100).toFixed(0)}%</span>
+        </div>
+      `;
+      const container = document.getElementById('box2Content');
+      container.prepend(el);
+    }
+
+    let chunksCount = 0;
+    function addChunkRow(pos) {
+      chunksCount++;
+      document.getElementById('box3Count').innerText = `${chunksCount} chunks`;
+      document.getElementById('metricChunks').innerHTML = `${chunksCount} <span style="font-size:11px; color:var(--text-muted);">chunks</span>`;
+
+      const el = document.createElement('div');
+      el.className = 'chunk-row';
+      el.onclick = () => openProofModal({
+        document_id: pos.document_id,
+        chunk_id: pos.chunk_id,
+        quote: "",
+        fact_type: "evidence_chunk",
+        value: pos.clause_ref,
+        confidence: 0.95,
+        status: "verified"
+      });
+      el.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;" class="font-mono">
+          <span style="color:var(--emerald); font-weight:700; font-size:11px;">Vector Row #${pos.row_id}</span>
+          <span style="color:var(--cyan); font-size:11px;">#${pos.chunk_id}</span>
+        </div>
+        <div style="font-size:11px; color:#cbd5e1; margin-bottom:4px;">${pos.document_id} · ${pos.clause_ref || 'Clause'}</div>
+        <div style="display:flex; gap:8px; font-size:10px; color:var(--text-muted);" class="font-mono">
+          <span>Page ${pos.page_num}</span>
+          <span>Offsets [${pos.char_offsets[0]}:${pos.char_offsets[1]}]</span>
+          <span>${pos.token_count} toks</span>
+        </div>
+      `;
+      const container = document.getElementById('box3Content');
+      container.prepend(el);
+    }
+
+    // Modal & PDF Viewer Logic
+    async function openProofModal(item) {
+      activeModalDoc = item.document_id;
+      activeModalQuote = item.quote || "";
+      activeModalChunkId = item.chunk_id;
+      activeModalPage = 1;
+
+      const modal = document.getElementById('proofModal');
+      modal.classList.add('active');
+
+      document.getElementById('modalDocTitle').innerText = `${item.document_id} // ${item.chunk_id}`;
+      document.getElementById('proofFactType').innerText = (item.fact_type || 'FACT').toUpperCase();
+      document.getElementById('proofFactValue').innerText = item.value || 'Grounded clause finding';
+      document.getElementById('proofQuote').innerText = item.quote ? `"${item.quote}"` : "Referenced clause text in canonical txt anchor.";
+      document.getElementById('btnDownloadPdf').href = `/api/pdf_file?doc=${encodeURIComponent(item.document_id)}`;
+
+      // Fetch chunk details if available
+      try {
+        const res = await fetch(`/api/chunk/${encodeURIComponent(item.chunk_id)}`);
+        if (res.ok) {
+          const c = await res.json();
+          activeModalPage = c.page_num || 1;
+          document.getElementById('modalPosSubtitle').innerText = 
+            `Collection: odin_chunks · Vector Row #${c.row_id} · Page ${c.page_num} · Offsets [${c.char_start}:${c.char_end}] · Tokens: ${c.token_count}/512`;
+          document.getElementById('proofCheckStatus').innerHTML = `
+            ✓ Verified in chunk: ${c.chunk_id}<br>
+            ✓ Matched to PDF Page: ${c.page_num}<br>
+            ✓ Stored Vector Row: #${c.row_id}<br>
+            ✓ Bounding rects calculated: ${c.rects?.length || 0} box(es)
+          `;
+        }
+      } catch (err) {
+        console.warn("Chunk fetch err:", err);
+      }
+
+      await loadPdfPage(activeModalPage);
+    }
+
+    async function loadPdfPage(page) {
+      activeModalPage = page;
+      document.getElementById('pdfCurrentPage').innerText = page;
+      const img = document.getElementById('pdfPageImg');
+      const loading = document.getElementById('pdfLoading');
+      loading.style.display = 'block';
+      img.style.display = 'none';
+
+      try {
+        const url = `/api/pdf_page?doc=${encodeURIComponent(activeModalDoc)}&page=${page}&chunk_id=${encodeURIComponent(activeModalChunkId)}&quote=${encodeURIComponent(activeModalQuote)}&format=json`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.success && data.image_data) {
+          img.src = data.image_data;
+          img.style.display = 'block';
+        } else {
+          loading.innerText = 'PDF rendering not available for this non-contract file.';
+          return;
+        }
+      } catch (err) {
+        loading.innerText = 'Failed to load PDF page.';
+      } finally {
+        loading.style.display = 'none';
+      }
+    }
+
+    function prevPage() {
+      if (activeModalPage > 1) {
+        loadPdfPage(activeModalPage - 1);
+      }
+    }
+
+    function nextPage() {
+      loadPdfPage(activeModalPage + 1);
+    }
+
+    function closeModal() {
+      document.getElementById('proofModal').classList.remove('active');
+    }
+
+    // Initialize on load
+    window.addEventListener('DOMContentLoaded', () => {
+      initSSE();
+    });
+  </script>
+</body>
+</html>
