@@ -279,4 +279,4 @@ CORS_ORIGINS=http://localhost:5173
 
 The Quillhub scenario and filenames come from the challenge materials described in the team's notes. The data is fictional. The challenge notes state that `STD.txt` adapts the [Common Paper Cloud Service Agreement Standard Terms v2.0](https://commonpaper.com/standards/cloud-service-agreement/2.0/) under **CC BY 4.0**, with modifications. ODIN's source-specific findings must be verified against the actual supplied files before publication.
 
-**Team:** _Add team name, members, GitHub repository, and demo link here._
+
