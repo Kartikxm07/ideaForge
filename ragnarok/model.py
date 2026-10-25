@@ -6,6 +6,22 @@ from .config import Settings
 from .tools import Step, validate_steps
 
 
+def _parse_json_response(raw: str):
+    raw = raw.strip()
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        raw = "\n".join(lines).strip()
+    first_bracket = min([i for i in [raw.find("["), raw.find("{")] if i != -1], default=-1)
+    last_bracket = max([raw.rfind("]"), raw.rfind("}")], default=-1)
+    if first_bracket != -1 and last_bracket != -1 and last_bracket >= first_bracket:
+        raw = raw[first_bracket:last_bracket + 1]
+    return json.loads(raw)
+
+
 class ModelUnavailable(Exception):
     pass
 
@@ -27,19 +43,30 @@ class OllamaProvider:
 
     def plan(self, prompt: str) -> list[Step]:
         instructions = (
-            "Return only a JSON array of 1 to 8 steps. Each step has tool_id, text, and use_previous. "
+            "Return only a valid JSON array of 1 to 8 steps. Each step has tool_id, text, and use_previous. "
             "Allowed tool_id values: text.uppercase, text.word_count, memory.save. "
             "Only use memory.save when the user explicitly asks to remember text. "
             "No shell, files, URLs, or other tools. User request: " + prompt
         )
         try:
-            with httpx.Client(timeout=30, trust_env=False) as client:
+            with httpx.Client(timeout=180, trust_env=False) as client:
                 response = client.post(
                     f"{self.settings.ollama_url}/api/generate",
-                    json={"model": self.settings.ollama_model, "prompt": instructions, "format": "json", "stream": False, "options": {"num_predict": 512}},
+                    json={"model": self.settings.ollama_model, "prompt": instructions, "stream": False, "options": {"num_predict": 4096}},
                 )
                 response.raise_for_status()
-                data = json.loads(response.json()["response"])
+                data = _parse_json_response(response.json().get("response", ""))
+            if isinstance(data, dict):
+                if "steps" in data and isinstance(data["steps"], list):
+                    data = data["steps"]
+                else:
+                    data = [data]
+            for item in data:
+                if isinstance(item, dict):
+                    if "text" not in item and "input" in item:
+                        item["text"] = str(item.pop("input"))
+                    if "use_previous" not in item:
+                        item["use_previous"] = False
             steps = [Step.model_validate(item) for item in data]
             validate_steps(steps)
             return steps
@@ -58,12 +85,14 @@ class OllamaProvider:
             + json.dumps({"question": question, "sources": contexts}, ensure_ascii=False)
         )
         try:
-            with httpx.Client(timeout=60, trust_env=False) as client:
+            with httpx.Client(timeout=180, trust_env=False) as client:
                 response = client.post(
                     f"{self.settings.ollama_url}/api/generate",
-                    json={"model": self.settings.ollama_model, "prompt": instructions, "format": "json", "stream": False, "options": {"num_predict": 1800}},
+                    json={"model": self.settings.ollama_model, "prompt": instructions, "stream": False, "options": {"num_predict": 4096}},
                 )
                 response.raise_for_status()
-                return FindingBatch.model_validate(json.loads(response.json()["response"]))
+                data = _parse_json_response(response.json().get("response", ""))
+                return FindingBatch.model_validate(data)
         except (httpx.HTTPError, ValueError, KeyError, TypeError, ValidationError) as exc:
             raise ModelUnavailable(f"Local model unavailable or returned invalid findings: {type(exc).__name__}") from exc
+
