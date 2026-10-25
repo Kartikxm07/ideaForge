@@ -9,6 +9,7 @@ from ragnarok.api import create_app
 from ragnarok.config import Settings
 from ragnarok.store import Store
 from ragnarok.documents import import_odin_bundle
+from ragnarok.analysis import FindingBatch, create_run, run_analysis_once
 from ragnarok.workflow import run_once
 
 
@@ -148,6 +149,98 @@ def test_schema_upgrades_existing_local_database(tmp_path):
         db.execute("PRAGMA user_version=1")
     Store(path).migrate()
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
         assert db.execute("SELECT name FROM sqlite_master WHERE name='documents'").fetchone() is not None
+        assert db.execute("SELECT name FROM sqlite_master WHERE name='analysis_runs'").fetchone() is not None
+
+
+def test_evidence_checked_analysis_rejects_bad_quotes_and_stales_on_update(tmp_path):
+    path = tmp_path / "runtime.sqlite3"
+    alice = LocalClient(create_app(settings(path)))
+    bob = LocalClient(create_app(settings(path, "bob")))
+    for key, text in [("A1", "Section D — Uptime\nProvider promises 99.95% uptime.\n"),
+                      ("B1", "Section D — Uptime\nCustomer receives 99.9% uptime.\n")]:
+        assert alice.post("/api/v1/documents", headers=HEADERS, json={"document_key": key, "title": key, "content": text}).status_code == 201
+    request = {"question": "Compare uptime commitments", "focus": "uptime", "document_keys": ["A1", "B1"]}
+    headers = {**HEADERS, "Idempotency-Key": "compare-uptime"}
+    run = alice.post("/api/v1/analyses", headers=headers, json=request).json()
+    assert run["status"] == "READY"
+    assert alice.post("/api/v1/analyses", headers=headers, json=request).json()["id"] == run["id"]
+    assert bob.get(f"/api/v1/analyses/{run['id']}", headers=HEADERS).status_code == 404
+
+    class FakeProvider:
+        def propose_findings(self, question, contexts):
+            assert question == request["question"]
+            assert {item["document_key"] for item in contexts} == {"A1", "B1"}
+            return FindingBatch.model_validate({"findings": [
+                {"claim": "Different uptime figures", "explanation": "Review the different percentages.", "evidence": [
+                    {"document_key": "A1", "clause_ref": "Section D", "quote": "Provider promises 99.95% uptime."},
+                    {"document_key": "B1", "clause_ref": "Section D", "quote": "Customer receives 99.9% uptime."},
+                ]},
+                {"claim": "Unsupported claim", "explanation": "Bad quote", "evidence": [
+                    {"document_key": "A1", "clause_ref": "Section D", "quote": "Provider promises 100% uptime."},
+                ]},
+            ]})
+
+    with Store(path).connect() as db:
+        db.execute("UPDATE analysis_runs SET status='RUNNING',lease_until='2000-01-01T00:00:00+00:00' WHERE id=?", (run["id"],))
+    assert run_analysis_once(Store(path), "alice", FakeProvider()) is True
+    completed = alice.get(f"/api/v1/analyses/{run['id']}", headers=HEADERS).json()
+    assert completed["status"] == "COMPLETED"
+    assert completed["rejected_count"] == 1
+    assert len(completed["findings"]) == 1
+    assert completed["findings"][0]["status"] == "EVIDENCE_CHECKED"
+    assert alice.post("/api/v1/documents", headers=HEADERS, json={"document_key": "A1", "title": "A1", "content": "Section D — Uptime\nProvider promises 99.5% uptime.\n"}).status_code == 201
+    stale = alice.get(f"/api/v1/analyses/{run['id']}", headers=HEADERS).json()
+    assert stale["status"] == "STALE" and stale["findings"][0]["status"] == "STALE"
+    assert alice.delete("/api/v1/documents/A1", headers=HEADERS).status_code == 204
+    assert alice.get(f"/api/v1/analyses/{run['id']}", headers=HEADERS).status_code == 404
+
+
+def test_analysis_model_failure_is_recorded(tmp_path):
+    path = tmp_path / "runtime.sqlite3"
+    client = LocalClient(create_app(settings(path)))
+    client.post("/api/v1/documents", headers=HEADERS, json={"document_key": "A1", "title": "A1", "content": "Section A — Terms\nUptime is 99%.\n"})
+    run = client.post("/api/v1/analyses", headers=HEADERS, json={"question": "Check uptime", "focus": "Uptime", "document_keys": ["A1"]}).json()
+
+    class BrokenProvider:
+        def propose_findings(self, question, contexts):
+            raise RuntimeError("offline")
+
+    assert run_analysis_once(Store(path), "alice", BrokenProvider()) is True
+    failed = client.get(f"/api/v1/analyses/{run['id']}", headers=HEADERS).json()
+    assert failed["status"] == "FAILED" and failed["error"] == "RuntimeError"
+
+
+def test_offline_uptime_comparison_is_grounded(tmp_path):
+    path = tmp_path / "runtime.sqlite3"
+    client = LocalClient(create_app(settings(path)))
+    sources = {
+        "A2": "SECTION 2 — UPTIME COMMITMENT\n2.1  Provider promises 99.5% of minutes.\n",
+        "B1": "§3.1  Uptime Commitment. Customer receives 99.9% of minutes.\n",
+    }
+    for key, content in sources.items():
+        client.post("/api/v1/documents", headers=HEADERS, json={"document_key": key, "title": key, "content": content})
+    run = client.post("/api/v1/analyses", headers=HEADERS, json={"question": "Compare uptime", "focus": "Uptime", "document_keys": ["A2", "B1"], "provider_kind": "deterministic"}).json()
+
+    class UnusedProvider:
+        def propose_findings(self, question, contexts):
+            raise AssertionError("Ollama must not be used in deterministic mode")
+
+    assert run_analysis_once(Store(path), "alice", UnusedProvider()) is True
+    result = client.get(f"/api/v1/analyses/{run['id']}", headers=HEADERS).json()
+    assert result["status"] == "COMPLETED"
+    assert len(result["findings"]) == 1
+    assert result["findings"][0]["status"] == "EVIDENCE_CHECKED"
+    assert {item["document_key"] for item in result["findings"][0]["evidence"]} == {"A2", "B1"}
+
+
+def test_citation_can_match_later_identical_quote(tmp_path):
+    path = tmp_path / "runtime.sqlite3"
+    client = LocalClient(create_app(settings(path)))
+    content = "Section A — First\nSame sentence.\nSection B — Second\nSame sentence.\n"
+    client.post("/api/v1/documents", headers=HEADERS, json={"document_key": "D", "title": "D", "content": content})
+    result = client.post("/api/v1/citations/verify", headers=HEADERS, json={"document_key": "D", "clause_ref": "Section B", "quote": "Same sentence."}).json()
+    assert result["verified"] is True
+    assert result["heading"] == "Section B — Second"
 

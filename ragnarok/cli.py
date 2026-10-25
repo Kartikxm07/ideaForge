@@ -20,8 +20,13 @@ def main() -> None:
     if args.command == "api":
         uvicorn.run(create_app(settings), host="127.0.0.1", port=8000)
     elif args.command == "worker":
+        from .analysis import run_analysis_once
+        from .model import OllamaProvider
+        provider = OllamaProvider(settings)
         while True:
             worked = run_once(store, settings.owner_id)
+            if not worked:
+                worked = run_analysis_once(store, settings.owner_id, provider)
             if args.once:
                 break
             if not worked:

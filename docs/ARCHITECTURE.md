@@ -16,6 +16,8 @@ flowchart LR
 
 The local runtime owns prompts, plans, memories, approvals, events, source documents, and audit records. API handlers validate requests and owner scope. The worker claims one step at a time with a lease, records its state before execution, and persists the result. Completed steps are skipped after a restart. The available tools are pure text operations and a transactional memory write. There is no arbitrary shell, file, or web tool. Document ingestion is an explicit local CLI or API operation; source text is not sent to Ollama automatically.
 
+An analysis run selects one to three owned documents and a focus phrase. The worker builds bounded excerpts, then invokes the configured local provider. Proposed citations are checked against the current source text and heading inside a transaction. Unsupported proposals are counted as rejected. Findings record the source hash and are labeled `EVIDENCE_CHECKED`; source changes mark them stale. A narrow deterministic uptime comparison supports offline demonstrations. See [ADR 0003](ADR/0003-evidence-gate.md).
+
 This is a single-user local runtime with an owner identifier for data isolation tests. It does not offer real multi-user authentication or a cloud control plane. The API is bound to loopback by the CLI. Directly deploying it to a public network is unsupported.
 
 ## Decisions

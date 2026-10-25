@@ -21,6 +21,11 @@ def _heading_at(content: str, offset: int) -> str | None:
     return heading
 
 
+def _affected_runs(db: sqlite3.Connection, owner_id: str, key: str) -> list[str]:
+    rows = db.execute("SELECT id,document_keys_json FROM analysis_runs WHERE owner_id=?", (owner_id,)).fetchall()
+    return [row["id"] for row in rows if key in json.loads(row["document_keys_json"])]
+
+
 def upsert_document(store: Store, owner_id: str, key: str, title: str, content: str, source: str) -> dict:
     if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", key):
         raise ValueError("Document key must be 1-80 letters, digits, dots, dashes, or underscores")
@@ -35,12 +40,28 @@ def upsert_document(store: Store, owner_id: str, key: str, title: str, content: 
         if prior:
             if prior["content_sha256"] != digest:
                 db.execute("UPDATE documents SET title=?,content=?,content_sha256=?,source=?,updated_at=? WHERE id=? AND owner_id=?", (title, content, digest, source, now(), prior["id"], owner_id))
+                for run_id in _affected_runs(db, owner_id, key):
+                    db.execute("UPDATE analysis_runs SET status='STALE',error='SourceChanged',lease_until=NULL,claim_id=NULL,updated_at=? WHERE id=? AND owner_id=?", (now(), run_id, owner_id))
+                    db.execute("UPDATE findings SET status='STALE' WHERE run_id=? AND owner_id=?", (run_id, owner_id))
             document_id = prior["id"]
         else:
             document_id = str(uuid.uuid4())
             db.execute("INSERT INTO documents(id,owner_id,document_key,title,content,content_sha256,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)", (document_id, owner_id, key, title, content, digest, source, now(), now()))
         Store.audit(db, owner_id, "document.upsert", document_id, "allowed")
         return dict(db.execute("SELECT id,document_key,title,content_sha256,source,created_at,updated_at FROM documents WHERE id=? AND owner_id=?", (document_id, owner_id)).fetchone())
+
+
+def delete_document(store: Store, owner_id: str, key: str) -> bool:
+    with store.connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT id FROM documents WHERE owner_id=? AND document_key=?", (owner_id, key)).fetchone()
+        if row is None:
+            return False
+        for run_id in _affected_runs(db, owner_id, key):
+            db.execute("DELETE FROM analysis_runs WHERE id=? AND owner_id=?", (run_id, owner_id))
+        db.execute("DELETE FROM documents WHERE id=? AND owner_id=?", (row["id"], owner_id))
+        Store.audit(db, owner_id, "document.delete", row["id"], "allowed")
+        return True
 
 
 def search_documents(db: sqlite3.Connection, owner_id: str, query: str, limit: int = 20) -> list[dict]:
@@ -65,14 +86,23 @@ def verify_citation(db: sqlite3.Connection, owner_id: str, key: str, clause_ref:
     row = db.execute("SELECT content,content_sha256 FROM documents WHERE owner_id=? AND document_key=?", (owner_id, key)).fetchone()
     if row is None:
         raise LookupError("Document not found")
-    if not 1 <= len(quote) <= 1000 or not 1 <= len(clause_ref) <= 100:
+    if not 1 <= len(quote) <= 1000 or not 1 <= len(clause_ref) <= 100 or not quote.strip() or not clause_ref.strip():
         raise ValueError("Quote and clause reference must be non-empty and bounded")
-    offset = row["content"].find(quote)
-    heading = _heading_at(row["content"], offset) if offset >= 0 else None
     normalized_ref = re.sub(r"\s+", " ", clause_ref).strip().casefold()
-    same_heading = offset >= 0 and _heading_at(row["content"], offset + len(quote) - 1) == heading
-    heading_match = bool(heading and same_heading and heading.casefold().startswith(normalized_ref))
-    return {"verified": offset >= 0 and heading_match, "quote_exact": offset >= 0, "heading_match": heading_match, "heading": heading, "offset": offset if offset >= 0 else None, "content_sha256": row["content_sha256"]}
+    first_offset = row["content"].find(quote)
+    offset = first_offset
+    heading = _heading_at(row["content"], offset) if offset >= 0 else None
+    heading_match = False
+    while offset >= 0:
+        candidate_heading = _heading_at(row["content"], offset)
+        same_heading = _heading_at(row["content"], offset + len(quote) - 1) == candidate_heading
+        normalized_heading = re.sub(r"\s+", " ", candidate_heading).strip().casefold() if candidate_heading else ""
+        if candidate_heading and same_heading and normalized_heading.startswith(normalized_ref):
+            heading = candidate_heading
+            heading_match = True
+            break
+        offset = row["content"].find(quote, offset + 1)
+    return {"verified": heading_match, "quote_exact": first_offset >= 0, "heading_match": heading_match, "heading": heading, "offset": offset if heading_match else (first_offset if first_offset >= 0 else None), "content_sha256": row["content_sha256"]}
 
 
 def import_odin_bundle(store: Store, owner_id: str, bundle: Path) -> list[dict]:

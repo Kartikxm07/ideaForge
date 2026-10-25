@@ -3,7 +3,8 @@ from hmac import compare_digest
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from .config import Settings
-from .documents import search_documents, upsert_document, verify_citation
+from .analysis import cancel_run, create_run, run_view
+from .documents import delete_document as remove_document, search_documents, upsert_document, verify_citation
 from .model import ModelUnavailable, OllamaProvider
 from .store import Store
 from .tools import Step, TOOL_INFO
@@ -39,6 +40,13 @@ class CitationRequest(BaseModel):
     document_key: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,80}$")
     clause_ref: str = Field(min_length=1, max_length=100)
     quote: str = Field(min_length=1, max_length=1000)
+
+
+class AnalysisRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+    focus: str = Field(min_length=2, max_length=100)
+    document_keys: list[str] = Field(min_length=1, max_length=3)
+    provider_kind: str = Field(default="ollama", pattern="^(ollama|deterministic)$")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -202,13 +210,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.delete("/api/v1/documents/{document_key}", status_code=204)
     async def delete_document(document_key: str, actor: str = Depends(owner)):
-        with store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT id FROM documents WHERE owner_id=? AND document_key=?", (actor, document_key)).fetchone()
-            if row is None:
-                raise HTTPException(status_code=404, detail="Document not found")
-            db.execute("DELETE FROM documents WHERE id=? AND owner_id=?", (row["id"], actor))
-            Store.audit(db, actor, "document.delete", row["id"], "allowed")
+        if not remove_document(store, actor, document_key):
+            raise HTTPException(status_code=404, detail="Document not found")
 
     @app.post("/api/v1/citations/verify")
     async def verify(request: CitationRequest, actor: str = Depends(owner)):
@@ -219,5 +222,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/api/v1/analyses", status_code=201)
+    async def new_analysis(request: AnalysisRequest, idempotency_key: str | None = Header(default=None, max_length=128), actor: str = Depends(owner)):
+        try:
+            return create_run(store, actor, request.question, request.focus, request.document_keys, idempotency_key, request.provider_kind)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/v1/analyses")
+    async def list_analyses(limit: int = Query(default=20, ge=1, le=100), actor: str = Depends(owner)):
+        with store.connect() as db:
+            ids = db.execute("SELECT id FROM analysis_runs WHERE owner_id=? ORDER BY created_at DESC LIMIT ?", (actor, limit)).fetchall()
+            return [run_view(db, actor, row["id"]) for row in ids]
+
+    @app.get("/api/v1/analyses/{run_id}")
+    async def get_analysis(run_id: str, actor: str = Depends(owner)):
+        with store.connect() as db:
+            result = run_view(db, actor, run_id)
+            if result is None:
+                raise HTTPException(status_code=404, detail="Analysis not found")
+            return result
+
+    @app.post("/api/v1/analyses/{run_id}/cancel")
+    async def cancel_analysis(run_id: str, actor: str = Depends(owner)):
+        try:
+            result = cancel_run(store, actor, run_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if result is None:
+            raise HTTPException(status_code=404, detail="Analysis not found")
+        return result
 
     return app

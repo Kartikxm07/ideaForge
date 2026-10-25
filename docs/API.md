@@ -17,7 +17,16 @@ All `/api/v1` routes require `Authorization: Bearer <RAGNAROK_API_TOKEN>`. The C
 | `GET/POST /api/v1/documents`, `GET/DELETE /api/v1/documents/{key}` | Manage source text |
 | `GET /api/v1/documents/search?q=...` | Find an exact source snippet with a nearby heading |
 | `POST /api/v1/citations/verify` | Verify exact quote and clause heading in current source text |
+| `POST /api/v1/analyses` | Queue an Ollama or deterministic finding run; accepts `Idempotency-Key` |
+| `GET /api/v1/analyses`, `GET /api/v1/analyses/{id}` | Inspect owned runs and evidence-checked findings |
+| `POST /api/v1/analyses/{id}/cancel` | Cancel a queued finding run |
 | `GET /api/v1/audit` | Inspect action metadata without raw prompt logging |
 
-The API does not stream SSE yet. Clients can poll events using the last seen event ID. Model and document parsing errors are returned without internal tracebacks. Authentication is a single local token, not a cloud account system.
+The API does not stream SSE yet. Clients can poll task events using the last seen event ID and analysis runs by ID. Model and document parsing errors are returned without internal tracebacks. Authentication is a single local token, not a cloud account system. Analysis findings are evidence-checked hypotheses, not validated legal opinions.
+
+Example local analysis request after importing the Odin pack:
+
+```json
+{"question":"Compare upstream and downstream uptime commitments","focus":"Uptime","document_keys":["A2","B1"],"provider_kind":"deterministic"}
+```
 

@@ -1,6 +1,6 @@
 # Ragnarok
 
-Ragnarok is a privacy-first local agent runtime under development. The current release is a runnable API and worker with persistent tasks, exact approvals, a small allowlisted tool registry, local memory, source-text ingestion, exact quote checks, and optional Ollama planning. It is **not yet a production SaaS**. The hosted control plane, web dashboard, encrypted memory, scheduler, and general-purpose sandbox are planned work.
+Ragnarok is a privacy-first local agent runtime under development. The current release is a runnable API and worker with persistent tasks, exact approvals, a small allowlisted tool registry, local memory, source-text ingestion, exact quote checks, and bounded contract finding runs. It is **not yet a production SaaS**. The hosted control plane, web dashboard, encrypted memory, scheduler, and general-purpose sandbox are planned work.
 
 The API binds to `127.0.0.1` and requires a bearer token. Private prompts and memory remain in the local SQLite database. The Ollama adapter accepts only a loopback HTTP origin and makes no cloud fallback.
 
@@ -29,6 +29,8 @@ python -m ragnarok.cli ingest-odin --bundle 'C:\path\to\odin_dev_pack\bundle'
 ```
 
 This imports the contract `.txt` files and company context, preserving their source text and SHA-256 hashes. Search through `GET /api/v1/documents/search?q=...` and check a proposed quote and clause reference with `POST /api/v1/citations/verify`. A successful check means the exact quote appears under the named heading in the current document version; it does **not** decide whether a legal interpretation is correct.
+
+Create a contract finding run with `POST /api/v1/analyses` using `question`, `focus`, `document_keys`, and `provider_kind`. The default `ollama` provider proposes hypotheses from bounded source excerpts; every citation must pass the exact-text gate before a finding is stored. `deterministic` is an offline comparison limited to uptime percentages in two commitment clauses. The worker processes the run, and `GET /api/v1/analyses/{id}` returns its state and evidence. Findings marked `EVIDENCE_CHECKED` have verified quote locations, **not verified legal conclusions**. Updating a source marks its runs stale; deleting a source removes runs derived from it.
 
 ## Test
 
