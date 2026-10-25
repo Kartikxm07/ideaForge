@@ -2,15 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowRight, Bell, CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign, Clock3, FileText, GitBranch, LogOut, Play, RefreshCw, Scale, ShieldCheck, UploadCloud, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, Bell, CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign, Clock3, FileText, GitBranch, LogOut, Play, RefreshCw, Scale, ShieldCheck, Swords, UploadCloud, Users } from "lucide-react";
 import { odinApi, type OdinCitation, type OdinContract, type OdinGraph, type OdinRun, type OdinSession } from "@/lib/odin-api";
+import { TrialView } from "@/components/views/TrialView";
 
-type View = "graph" | "time" | "exposure" | "debate" | "actions";
+type View = "trial" | "debate" | "exposure" | "graph" | "time" | "actions";
 const navigation: { id: View; label: string; icon: typeof GitBranch; code: string }[] = [
+  { id: "trial", label: "Agent Trial Chamber", icon: Swords, code: "FR7.2" },
+  { id: "debate", label: "Agent Debate", icon: Users, code: "FR9.4" },
+  { id: "exposure", label: "Exposure Views", icon: CircleDollarSign, code: "FR7.3" },
   { id: "graph", label: "Contract Graph", icon: GitBranch, code: "FR9.1" },
   { id: "time", label: "Time Simulator", icon: Clock3, code: "FR9.2" },
-  { id: "exposure", label: "Exposure Views", icon: CircleDollarSign, code: "FR9.3" },
-  { id: "debate", label: "Agent Debate", icon: Users, code: "FR9.4" },
   { id: "actions", label: "Alerts & Actions", icon: Bell, code: "FR9.5" },
 ];
 const emptyRun: OdinRun = { status: "NOT_RUN", extractions: [], timeline: [], findings: [], verifications: [], rulings: [], messages: [] };
@@ -133,7 +135,7 @@ function ActionsPanel({ run, current, events, refresh }: { run: OdinRun; current
 
 export default function WarRoomPage() {
   const router = useRouter();
-  const [view, setView] = useState<View>("graph");
+  const [view, setView] = useState<View>("trial");
   const [session, setSession] = useState<OdinSession | null>(null);
   const [contracts, setContracts] = useState<OdinContract[]>([]);
   const [graph, setGraph] = useState<OdinGraph>({ nodes: [], edges: [] });
@@ -181,7 +183,12 @@ export default function WarRoomPage() {
         <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[["Contracts", contracts.length, FileText], ["Verified terms", run.extractions.length, ShieldCheck], ["Findings", run.findings.length, AlertTriangle], ["Draft actions", run.rulings.filter(r => r.draft_notice).length, Scale]].map(([label, value, Icon]) => { const Pictogram = Icon as typeof FileText; return <div key={label as string} className="rounded-xl border border-[#dce5ee] bg-white p-4 shadow-sm"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>{label as string}</span><Pictogram size={17} className="text-[#d4a017]"/></div><p className="mt-2 text-2xl font-bold">{value as number}</p></div>; })}</div>
         <div className="mb-5 flex gap-2 overflow-x-auto pb-1 md:hidden">{navigation.map(item => <button key={item.id} onClick={() => setView(item.id)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold ${view === item.id ? "bg-[#17375b] text-white" : "bg-white text-[#49627c]"}`}>{item.label}</button>)}</div>
         <div className="mb-5 flex items-center gap-2 text-sm"><span className="rounded-md bg-[#e9f0f7] px-2 py-1 text-xs font-bold text-[#2b587f]">{navigation.find(n => n.id === view)?.code}</span><ChevronRight size={14} className="text-slate-400"/><span className="font-semibold">{navigation.find(n => n.id === view)?.label}</span><span className="ml-auto text-xs text-slate-500">{loading ? "Loading…" : run.status === "NOT_RUN" ? "Awaiting first analysis" : `Run: ${run.status.toLowerCase()}`}</span></div>
-        {view === "graph" && <GraphPanel graph={graph}/>}{view === "time" && <TimePanel run={run} day={day} setDay={setDay}/>}{view === "exposure" && <ExposurePanel run={run} contracts={contracts} current={current}/>}{view === "debate" && <DebatePanel run={run}/>}{view === "actions" && <ActionsPanel run={run} current={current} events={events} refresh={refresh}/>}
+        {view === "trial" && <TrialView />}
+        {view === "graph" && <GraphPanel graph={graph}/>}
+        {view === "time" && <TimePanel run={run} day={day} setDay={setDay}/>}
+        {view === "exposure" && <ExposurePanel run={run} contracts={contracts} current={current}/>}
+        {view === "debate" && <DebatePanel run={run}/>}
+        {view === "actions" && <ActionsPanel run={run} current={current} events={events} refresh={refresh}/>}
       </main>
     </div>
   </div>;

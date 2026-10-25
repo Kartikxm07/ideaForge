@@ -7,7 +7,9 @@ import {
   ArrowDown, CheckCircle2, CircleDot, Clock3, FileQuestion,
   Loader2, LogOut, MessageSquare, RefreshCw, Send,
   ShieldCheck, Swords, ThumbsDown, ThumbsUp, TriangleAlert, UserCheck, Zap,
+  Scale, Layers,
 } from "lucide-react";
+import { TrialView } from "@/components/views/TrialView";
 
 /* ── types ─────────────────────────────────────────────────────────────── */
 type StepStatus = "idle" | "running" | "done" | "error";
@@ -78,6 +80,7 @@ export default function WorkflowPage() {
   const [answer, setAnswer] = useState("");
   const [decision, setDecision] = useState<"Approve"|"Reject"|"Escalate">("Approve");
   const [submitting, setSubmitting] = useState(false);
+  const [activeWorkflowTab, setActiveWorkflowTab] = useState<"pipeline" | "trial" | "review">("trial");
   const [toast, setToast] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -161,11 +164,57 @@ export default function WorkflowPage() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
+      {/* ── Workflow Sub-Header Tabs ──────────────────────────────────── */}
+      <div className="border-b border-white/10 bg-[#0d1c33] px-6 py-2.5">
+        <div className="mx-auto flex max-w-5xl items-center gap-2">
+          <button
+            onClick={() => setActiveWorkflowTab("trial")}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
+              activeWorkflowTab === "trial"
+                ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/25"
+                : "text-slate-400 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            <Swords size={14} />
+            <span>Trial Chamber (FR7.2)</span>
+          </button>
+          <button
+            onClick={() => setActiveWorkflowTab("pipeline")}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
+              activeWorkflowTab === "pipeline"
+                ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/25"
+                : "text-slate-400 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            <Zap size={14} />
+            <span>Agent Pipeline Flow (FR5.1)</span>
+          </button>
+          <button
+            onClick={() => setActiveWorkflowTab("review")}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
+              activeWorkflowTab === "review"
+                ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/25"
+                : "text-slate-400 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            <UserCheck size={14} />
+            <span>Human Review Q&A</span>
+            {pending > 0 && (
+              <span className="rounded-full bg-red-500 px-1.5 py-0.2 text-[10px] font-bold text-white">
+                {pending}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
 
-        {/* ── Pipeline ────────────────────────────────────────────────── */}
-        <section>
-          <h2 className="mb-6 text-xl font-bold">Agent Pipeline</h2>
+      <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
+        {activeWorkflowTab === "trial" && <TrialView />}
+
+        {activeWorkflowTab === "pipeline" && (
+          <section>
+            <h2 className="mb-6 text-xl font-bold">Agent Pipeline</h2>
+
           <div className="flex flex-col items-center">
             {PIPELINE.map((step, i) => {
               const st = statuses[step.id] ?? "idle";
@@ -251,9 +300,10 @@ export default function WorkflowPage() {
             )}
           </div>
         </section>
+        )}
 
         {/* ── Human Review ─────────────────────────────────────────────── */}
-        {review && review.questions.length > 0 && (
+        {activeWorkflowTab === "review" && review && review.questions.length > 0 && (
           <section>
             <div className="mb-6">
               <h2 className="flex items-center gap-2 text-xl font-bold">
@@ -297,7 +347,7 @@ export default function WorkflowPage() {
         )}
 
         {/* empty state */}
-        {(!review || review.questions.length === 0) && run && run.status !== "NOT_RUN" && (
+        {activeWorkflowTab === "review" && (!review || review.questions.length === 0) && (
           <section className="rounded-2xl border border-dashed border-white/10 p-12 text-center">
             <MessageSquare size={36} className="mx-auto text-slate-700" />
             <p className="mt-4 font-semibold text-slate-400">No findings pending human review</p>

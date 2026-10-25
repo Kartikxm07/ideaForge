@@ -95,6 +95,12 @@ class HumanReviewAnswer(BaseModel):
     decision: Literal["Approve", "Reject", "Escalate"] = "Approve"
 
 
+class TrialRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    as_of_date: str | None = Field(default="2026-11-15", max_length=50)
+
+
+
 def install_workspace(app, store, settings, owner, session):
     router = APIRouter(prefix="/api/v1/workspace", tags=["ODIN workspace"])
 
@@ -616,4 +622,37 @@ def install_workspace(app, store, settings, owner, session):
                 await asyncio.sleep(5)
         return StreamingResponse(events(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
+    @router.post("/trial/run")
+    def run_trial(body: TrialRequest, actor=Depends(owner)):
+        from .trial_engine import TrialLoop
+        loop = TrialLoop(store, actor)
+        return loop.execute_trial(body.question, body.as_of_date)
+
+    @router.get("/trial/latest")
+    def get_latest_trial(actor=Depends(owner)):
+        with store.connect() as db:
+            row = db.execute(
+                "SELECT data FROM web_records WHERE owner_id=? AND kind='agent-trial-run' ORDER BY updated_at DESC LIMIT 1",
+                (actor,)
+            ).fetchone()
+            if row:
+                return json.loads(row["data"])
+        from .trial_engine import TrialLoop
+        loop = TrialLoop(store, actor)
+        return loop.execute_trial("What is our commercial exposure across enterprise contracts and infrastructure outages as of Nov 15, 2026?", "2026-11-15")
+
+    @router.get("/world/feed")
+    def world_feed(actor=Depends(owner)):
+        from .trial_engine import get_live_news_feed
+        return get_live_news_feed(store, actor)
+
+    @router.get("/world/doc/{doc_key}")
+    def get_world_doc(doc_key: str, actor=Depends(owner)):
+        with store.connect() as db:
+            row = db.execute("SELECT document_key, title, content, content_sha256 FROM documents WHERE owner_id=? AND document_key=?", (actor, doc_key)).fetchone()
+            if not row:
+                raise HTTPException(404, f"Document {doc_key} not found")
+            return dict(row)
+
     app.include_router(router)
+

@@ -13,6 +13,7 @@ import {
   FileText,
   Settings,
   ChevronDown,
+  Zap,
 } from "lucide-react";
 import { useOdinStore } from "@/store/useOdinStore";
 
@@ -23,6 +24,7 @@ export function HudHeader() {
   const navLinks = [
     { href: "/",          label: "Onboard",     icon: FilePlus },
     { href: "/war-room",  label: "Portfolio Intelligence", icon: LayoutDashboard },
+    { href: "/workflow",  label: "Agent Pipeline & Review", icon: Zap },
     { href: "/analysis",  label: "Agent Ops",   icon: Settings },
     { href: "/reports",   label: "Reports",     icon: FileText },
   ];
