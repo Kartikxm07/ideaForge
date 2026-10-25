@@ -14,7 +14,7 @@ flowchart LR
   Tools --> DB
 ```
 
-The local runtime owns prompts, plans, memories, approvals, events, and audit records. API handlers validate requests and owner scope. The worker claims one step at a time with a lease, records its state before execution, and persists the result. Completed steps are skipped after a restart. The available tools are pure text operations and a transactional memory write. There is no arbitrary shell, file, or web tool.
+The local runtime owns prompts, plans, memories, approvals, events, source documents, and audit records. API handlers validate requests and owner scope. The worker claims one step at a time with a lease, records its state before execution, and persists the result. Completed steps are skipped after a restart. The available tools are pure text operations and a transactional memory write. There is no arbitrary shell, file, or web tool. Document ingestion is an explicit local CLI or API operation; source text is not sent to Ollama automatically.
 
 This is a single-user local runtime with an owner identifier for data isolation tests. It does not offer real multi-user authentication or a cloud control plane. The API is bound to loopback by the CLI. Directly deploying it to a public network is unsupported.
 

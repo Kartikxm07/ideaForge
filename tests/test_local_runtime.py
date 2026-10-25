@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -7,6 +8,7 @@ import httpx
 from ragnarok.api import create_app
 from ragnarok.config import Settings
 from ragnarok.store import Store
+from ragnarok.documents import import_odin_bundle
 from ragnarok.workflow import run_once
 
 
@@ -97,4 +99,55 @@ def test_unavailable_model_and_tool_rejection(tmp_path):
     assert client.post("/api/v1/tasks", headers=HEADERS, json={"prompt": "bad", "steps": [{"tool_id": "shell.run", "text": "whoami"}]}).status_code == 422
     response = client.post("/api/v1/tasks/from-prompt", headers=HEADERS, json={"prompt": "say hi"})
     assert response.status_code == 503
+
+
+def test_document_ingestion_citation_and_owner_scope(tmp_path):
+    path = tmp_path / "runtime.sqlite3"
+    alice = LocalClient(create_app(settings(path)))
+    bob = LocalClient(create_app(settings(path, "bob")))
+    bundle = tmp_path / "bundle"
+    (bundle / "contracts").mkdir(parents=True)
+    content = "Section A — Terms\nNotice is due in 30 days.\nSection B — Other\nNo refund is due.\n"
+    (bundle / "contracts" / "A1.txt").write_text(content, encoding="utf-8")
+    (bundle / "manifest.json").write_text(json.dumps({"files": [{"path": "contracts/A1.txt", "title": "Sample contract"}]}), encoding="utf-8")
+    imported = import_odin_bundle(Store(path), "alice", bundle)
+    assert len(imported) == 1 and imported[0]["document_key"] == "A1"
+    assert bob.get("/api/v1/documents", headers=HEADERS).json() == []
+    results = alice.get("/api/v1/documents/search", headers=HEADERS, params={"q": "Notice is due"}).json()
+    assert results[0]["heading"] == "Section A — Terms"
+    citation = {"document_key": "A1", "clause_ref": "Section A", "quote": "Notice is due in 30 days."}
+    original = alice.post("/api/v1/citations/verify", headers=HEADERS, json=citation).json()
+    assert original["verified"] is True
+    assert alice.post("/api/v1/citations/verify", headers=HEADERS, json={**citation, "clause_ref": "Section B"}).json()["verified"] is False
+    assert bob.post("/api/v1/citations/verify", headers=HEADERS, json=citation).status_code == 404
+    updated = alice.post("/api/v1/documents", headers=HEADERS, json={"document_key": "A1", "title": "Revised sample", "content": "Section A — Terms\nNotice is due in 45 days.\n"}).json()
+    assert updated["content_sha256"] != original["content_sha256"]
+    assert alice.post("/api/v1/citations/verify", headers=HEADERS, json=citation).json()["verified"] is False
+    assert alice.delete("/api/v1/documents/A1", headers=HEADERS).status_code == 204
+    assert alice.get("/api/v1/documents/search", headers=HEADERS, params={"q": "Notice"}).json() == []
+
+
+def test_odin_manifest_rejects_path_escape(tmp_path):
+    path = tmp_path / "runtime.sqlite3"
+    Store(path).migrate()
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "manifest.json").write_text(json.dumps({"files": [{"path": "contracts/../../secret.txt", "title": "Bad"}]}), encoding="utf-8")
+    (tmp_path / "secret.txt").write_text("secret", encoding="utf-8")
+    import pytest
+    with pytest.raises((ValueError, FileNotFoundError)):
+        import_odin_bundle(Store(path), "alice", bundle)
+
+
+def test_schema_upgrades_existing_local_database(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.sqlite3"
+    first = Path(__file__).resolve().parents[1] / "ragnarok" / "migrations" / "001_init.sql"
+    with sqlite3.connect(path) as db:
+        db.executescript(first.read_text(encoding="utf-8"))
+        db.execute("PRAGMA user_version=1")
+    Store(path).migrate()
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("SELECT name FROM sqlite_master WHERE name='documents'").fetchone() is not None
 

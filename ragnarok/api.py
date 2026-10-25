@@ -3,6 +3,7 @@ from hmac import compare_digest
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from .config import Settings
+from .documents import search_documents, upsert_document, verify_citation
 from .model import ModelUnavailable, OllamaProvider
 from .store import Store
 from .tools import Step, TOOL_INFO
@@ -26,6 +27,18 @@ class ApprovalRequest(BaseModel):
 class MemoryRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
     kind: str = Field(default="semantic", pattern="^(semantic|episodic)$")
+
+
+class DocumentRequest(BaseModel):
+    document_key: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,80}$")
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=2_000_000)
+
+
+class CitationRequest(BaseModel):
+    document_key: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,80}$")
+    clause_ref: str = Field(min_length=1, max_length=100)
+    quote: str = Field(min_length=1, max_length=1000)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -161,5 +174,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def audit(limit: int = Query(default=50, ge=1, le=100), actor: str = Depends(owner)):
         with store.connect() as db:
             return [dict(row) for row in db.execute("SELECT * FROM audit_events WHERE owner_id=? ORDER BY id DESC LIMIT ?", (actor, limit)).fetchall()]
+
+    @app.post("/api/v1/documents", status_code=201)
+    async def add_document(request: DocumentRequest, actor: str = Depends(owner)):
+        try:
+            return upsert_document(store, actor, request.document_key, request.title, request.content, "api")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/v1/documents")
+    async def list_documents(limit: int = Query(default=100, ge=1, le=100), actor: str = Depends(owner)):
+        with store.connect() as db:
+            return [dict(row) for row in db.execute("SELECT id,document_key,title,content_sha256,source,created_at,updated_at FROM documents WHERE owner_id=? ORDER BY document_key LIMIT ?", (actor, limit)).fetchall()]
+
+    @app.get("/api/v1/documents/search")
+    async def document_search(q: str = Query(min_length=1, max_length=200), limit: int = Query(default=20, ge=1, le=100), actor: str = Depends(owner)):
+        with store.connect() as db:
+            return search_documents(db, actor, q, limit)
+
+    @app.get("/api/v1/documents/{document_key}")
+    async def get_document(document_key: str, actor: str = Depends(owner)):
+        with store.connect() as db:
+            row = db.execute("SELECT * FROM documents WHERE owner_id=? AND document_key=?", (actor, document_key)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Document not found")
+            return dict(row)
+
+    @app.delete("/api/v1/documents/{document_key}", status_code=204)
+    async def delete_document(document_key: str, actor: str = Depends(owner)):
+        with store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT id FROM documents WHERE owner_id=? AND document_key=?", (actor, document_key)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Document not found")
+            db.execute("DELETE FROM documents WHERE id=? AND owner_id=?", (row["id"], actor))
+            Store.audit(db, actor, "document.delete", row["id"], "allowed")
+
+    @app.post("/api/v1/citations/verify")
+    async def verify(request: CitationRequest, actor: str = Depends(owner)):
+        with store.connect() as db:
+            try:
+                return verify_citation(db, actor, request.document_key, request.clause_ref, request.quote)
+            except LookupError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return app

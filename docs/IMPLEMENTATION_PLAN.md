@@ -12,13 +12,14 @@ The linked GitHub repository initially contained only a short `README.md`; durin
 4. Ollama health and structured-plan adapter limited to loopback, with clear failure when unavailable.
 5. Closed tool registry: uppercase, word count, and approval-gated memory save.
 6. Integration tests for API authorization, owner isolation, approval, idempotency, deletion, unavailable model, and worker process restart.
+7. Local Odin text ingestion, owner-scoped search, exact quote and heading verification, and deletion. The supplied local pack imported 9 text documents in a smoke test.
 
 ## Next increments
 
 1. Add a real workflow planner/evaluator with grounded outputs, richer event states, cancellation of running work, and human review UX. Benchmark LangGraph checkpoint integration before adopting it.
 2. Add memory provenance/versioning, retention, full-text retrieval, local embeddings, export controls, and verified deletion of derived indexes.
 3. Build an authenticated dashboard showing real API state and events.
-4. Add file ingestion for the Odin pack with exact citation verification and explicit file permissions.
+4. Extend Odin ingestion to ledgers, event drops, amendments, effective-term resolution, and evidence-backed findings. Current ingestion covers only text contracts and company context.
 5. Add recurring automation, then a separate SaaS control plane with organization auth, Postgres, migrations, registration, billing entitlements, and opt-in sync.
 6. Add structured telemetry, security tests, dependency scanning, containers, deployment playbooks, backups, and measured performance goals.
 

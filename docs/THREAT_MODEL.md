@@ -15,6 +15,8 @@ Assets are the bearer token, local prompts, plans, memories, workflow results, a
 | Duplicate execution after crash | SQLite transaction, lease, completed-step skip, deterministic memory ID | Only built-in idempotent tools are allowed; no external side effects |
 | SSRF or cloud prompt leakage | Ollama URL validation restricts to loopback; `trust_env=False`; no cloud fallback | A compromised local Ollama process can still see prompts |
 | Secret leakage | Token comes from environment and is not logged | No secret manager; local operators must protect environment and database |
+| Malicious manifest path | Resolved paths must remain inside the chosen bundle; only `.txt` contract and company files are read | Source text is untrusted and must not become instructions to later agents |
+| Fabricated legal citation | Exact quote and heading are checked against stored source text and its hash | This verifies text location, not legal reasoning or current contractual effect |
 
 The current runtime is suitable for local development and demonstrations, not untrusted public multi-user hosting. Before adding SaaS access: use independent identity verification, tenant membership checks, rate limiting, CSRF-safe browser auth, TLS, abuse controls, encryption key management, and deeper security testing.
 
