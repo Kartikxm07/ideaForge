@@ -15,9 +15,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ODIN – Contract Intelligence",
+  title: "ODIN – Financial & Contract Solutions",
   description:
-    "Autonomous multi-agent contract radar and dispute intelligence engine. Powered by Ragnarok local runtime.",
+    "Institutional financial risk radar, contract analytics and compliance intelligence platform.",
 };
 
 export default function RootLayout({

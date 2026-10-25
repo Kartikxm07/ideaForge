@@ -22,7 +22,7 @@ export function HudHeader() {
 
   const navLinks = [
     { href: "/",          label: "Onboard",     icon: FilePlus },
-    { href: "/war-room",  label: "War Room",    icon: LayoutDashboard },
+    { href: "/war-room",  label: "Portfolio Intelligence", icon: LayoutDashboard },
     { href: "/analysis",  label: "Agent Ops",   icon: Settings },
     { href: "/reports",   label: "Reports",     icon: FileText },
   ];
@@ -47,7 +47,7 @@ export function HudHeader() {
               ODIN
             </span>
             <span className="text-[10px] text-white/40 font-medium tracking-widest uppercase">
-              Contract War Room
+              Financial Solutions
             </span>
           </div>
         </Link>

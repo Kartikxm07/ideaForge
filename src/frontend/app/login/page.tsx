@@ -15,7 +15,7 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
-  Sparkles,
+  Info,
 } from "lucide-react";
 
 export default function LoginPage() {
@@ -59,10 +59,10 @@ export default function LoginPage() {
         }
       }
 
-      setSuccess("Authentication granted. Accessing ODIN Command Center…");
+      setSuccess("Credentials verified. Redirecting to your dashboard.");
       setLoading(false);
       setTimeout(() => {
-        router.push("/war-room");
+        router.push("/");
       }, 900);
     }, 600);
   };
@@ -80,7 +80,7 @@ export default function LoginPage() {
               ODIN
             </span>
             <span className="ml-2 text-xs text-amber-800/60 font-semibold tracking-wider uppercase">
-              Contract War Room
+              Contract Intelligence
             </span>
           </div>
         </Link>
@@ -113,7 +113,7 @@ export default function LoginPage() {
               Sign In to ODIN
             </h1>
             <p className="text-sm text-slate-500 mt-1">
-              Autonomous legal operations & multi-agent war room
+              Secure access to contract analysis and compliance monitoring
             </p>
           </div>
 
@@ -200,7 +200,7 @@ export default function LoginPage() {
                       href="#"
                       onClick={(e) => {
                         e.preventDefault();
-                        alert("Demo Mode: Click 'Authorize & Launch' to continue.");
+                        alert("Contact your administrator to reset your credentials.");
                       }}
                       className="text-[11px] font-semibold text-amber-700 hover:underline"
                     >
@@ -246,7 +246,7 @@ export default function LoginPage() {
                   <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-amber-600" />
+                  <Info className="w-3 h-3 text-amber-600" />
                   Pre-filled with the active server session key
                 </p>
               </div>
@@ -260,11 +260,11 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  <span>Verifying Credentials…</span>
+                  <span>Verifying credentials</span>
                 </>
               ) : (
                 <>
-                  <span>Authorize & Launch War Room</span>
+                  <span>Authorize and Continue</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -274,7 +274,7 @@ export default function LoginPage() {
           {/* Quick Demo Access info */}
           <div className="mt-6 pt-5 border-t border-slate-100 text-center">
             <p className="text-xs text-slate-500">
-              Demo Environment • Pre-authorized as{" "}
+              Sandbox Environment — Pre-authorized as{" "}
               <span className="font-semibold text-slate-700">General Counsel</span>
             </p>
           </div>
@@ -283,7 +283,7 @@ export default function LoginPage() {
 
       {/* Footer */}
       <div className="max-w-6xl mx-auto w-full text-center py-4 text-xs text-slate-400">
-        ODIN Intelligence Platform • Multi-Agent Legal Consensus Framework
+        ODIN Intelligence Platform — Contract Analytics and Compliance Solutions
       </div>
     </div>
   );
