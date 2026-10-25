@@ -1,16 +1,18 @@
 """Local API. Bearer token is required for every private route."""
 from hmac import compare_digest
 from datetime import date
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from .config import Settings
 from .analysis import cancel_run, create_run, run_view
 from .documents import delete_document as remove_document, search_documents, upsert_document, verify_citation
-from .model import ModelUnavailable, OllamaProvider
+from .model import ModelUnavailable, ClaudeProvider
 from .operational_events import OperationalEvent, add_event, list_events
 from .store import Store
 from .tools import Step, TOOL_INFO
 from .workflow import approve_step, cancel_task, create_task, task_view
+from .web_auth import install_auth
+from .workspace_api import install_workspace
 
 
 class TaskRequest(BaseModel):
@@ -48,21 +50,30 @@ class AnalysisRequest(BaseModel):
     question: str = Field(min_length=1, max_length=500)
     focus: str = Field(min_length=2, max_length=100)
     document_keys: list[str] = Field(min_length=1, max_length=3)
-    provider_kind: str = Field(default="ollama", pattern="^(ollama|deterministic)$")
+    provider_kind: str = Field(default="anthropic", pattern="^(anthropic|ollama|deterministic)$")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     store = Store(settings.db_path)
     store.migrate()
-    model = OllamaProvider(settings)
+    model = ClaudeProvider(settings)
     app = FastAPI(title="Ragnarok Local Runtime", version="0.1.0")
+    session = install_auth(app, store)
 
     async def owner(authorization: str | None = Header(default=None)) -> str:
         token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
         if not compare_digest(token, settings.api_token):
             raise HTTPException(status_code=401, detail="Authentication required")
         return settings.owner_id
+
+    def workspace_owner(request: Request, authorization: str | None = Header(default=None)) -> str:
+        token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+        if token and compare_digest(token, settings.api_token):
+            return settings.owner_id
+        return session(request)["org_id"]
+
+    install_workspace(app, store, settings, workspace_owner, session)
 
     @app.get("/health/live")
     async def live():

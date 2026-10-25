@@ -114,8 +114,8 @@ export function DebateView() {
                 <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">
                   Round 2/3 • Clarifications: {conf.clarifications?.length || 0}/2
                 </span>
-                <span className="text-rose-400 font-bold font-jetbrains">
-                  ${conf.financialExposure.toLocaleString()} Exposure
+                <span className="text-rose-400 font-bold font-jetbrains" suppressHydrationWarning>
+                  ${conf.financialExposure.toLocaleString("en-US")} Exposure
                 </span>
               </div>
             </div>

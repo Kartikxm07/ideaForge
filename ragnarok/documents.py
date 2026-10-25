@@ -9,7 +9,7 @@ from .store import Store, now
 
 
 MAX_TEXT_BYTES = 2_000_000
-HEADING = re.compile(r"(?im)^\s*((?:section\s+[A-Z0-9.]+|§\s*\d+(?:\.\d+)*|\d+(?:\.\d+)+)\b[^\r\n]*)")
+HEADING = re.compile(r"(?im)^\s*((?:#{1,6}\s+|section\s+[A-Z0-9.]+|§\s*\d+(?:\.\d+)*|\d+(?:\.\d+)+\b|\d+\.(?=\s))[^\r\n]*)")
 
 
 def _heading_at(content: str, offset: int) -> str | None:
@@ -93,6 +93,8 @@ def verify_citation(db: sqlite3.Connection, owner_id: str, key: str, clause_ref:
     offset = first_offset
     heading = _heading_at(row["content"], offset) if offset >= 0 else None
     heading_match = False
+    if first_offset >= 0 and normalized_ref == "source document" and not HEADING.search(row["content"]):
+        return {"verified": True, "quote_exact": True, "heading_match": True, "heading": "Source document", "offset": first_offset, "content_sha256": row["content_sha256"]}
     while offset >= 0:
         candidate_heading = _heading_at(row["content"], offset)
         same_heading = _heading_at(row["content"], offset + len(quote) - 1) == candidate_heading

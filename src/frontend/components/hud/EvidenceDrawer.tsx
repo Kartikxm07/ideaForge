@@ -133,7 +133,7 @@ export function EvidenceDrawer() {
               </div>
 
               {/* 65% Gate Score Breakdown */}
-              <div className="space-y-3 p-4 rounded-xl border border-cyan-500/20 bg-slate-900/50">
+              {clause.scoreBreakdown && <div className="space-y-3 p-4 rounded-xl border border-cyan-500/20 bg-slate-900/50">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-rajdhani font-bold uppercase tracking-wider text-cyan-300">
                     ODIN PROMOTION GATE (65% THRESHOLD)
@@ -168,8 +168,9 @@ export function EvidenceDrawer() {
                 </div>
               </div>
 
+              }
               {/* Provenance Trail */}
-              <div className="space-y-2 p-3.5 rounded-lg border border-slate-800 bg-slate-950 text-xs font-mono text-slate-400">
+              {clause.provenance && <div className="space-y-2 p-3.5 rounded-lg border border-slate-800 bg-slate-950 text-xs font-mono text-slate-400">
                 <span className="text-[10px] font-rajdhani uppercase tracking-wider text-slate-500 block">
                   PROVENANCE AUDIT TRAIL
                 </span>
@@ -187,9 +188,9 @@ export function EvidenceDrawer() {
                 </div>
                 <div className="flex justify-between">
                   <span>SHA-256 Digest:</span>
-                  <span className="text-slate-200 font-jetbrains">{clause.provenance.contentHash}...</span>
+                  <span className="text-slate-200 font-jetbrains">{clause.provenance.contentHash ?? "Not available"}</span>
                 </div>
-              </div>
+              </div>}
             </div>
 
             {/* Footer */}

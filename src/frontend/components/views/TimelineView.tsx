@@ -49,7 +49,7 @@ export function TimelineView() {
                 </div>
                 <div className="flex items-center gap-3 text-[11px] font-mono text-slate-400">
                   <span className="flex items-center gap-1">
-                    <Flag className="w-3 h-3 text-amber-400" /> Notice Cutoff: {lane.noticeDeadline}
+                    <Flag className="w-3 h-3 text-amber-400" /> Notice Cutoff: {lane.milestones.find((milestone) => milestone.type === "notice")?.date ?? "Not available"}
                   </span>
                 </div>
               </div>
@@ -67,18 +67,12 @@ export function TimelineView() {
                 </div>
 
                 {/* Payment Events Dots */}
-                {lane.paymentEvents.map((pe, idx) => (
+                {lane.milestones.filter((milestone) => milestone.type === "payment").map((pe, idx) => (
                   <div
                     key={idx}
-                    title={`Payment Event: $${pe.amount.toLocaleString()} [${pe.status}] on ${pe.date}`}
+                    title={`Sample scheduled payment: ${pe.amount == null ? "Amount unavailable" : "$" + pe.amount.toLocaleString("en-US")} on ${pe.date}`}
                     style={{ left: `${20 + idx * 18}%` }}
-                    className={`absolute w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transform -translate-x-1/2 cursor-pointer ${
-                      pe.status === "PAID"
-                        ? "border-emerald-400 bg-emerald-500 shadow-sm shadow-emerald-400"
-                        : pe.status === "MISSED"
-                        ? "border-rose-400 bg-rose-600 animate-ping"
-                        : "border-slate-400 bg-slate-800"
-                    }`}
+                    className="absolute w-3.5 h-3.5 rounded-full border-2 border-slate-400 bg-slate-800 flex items-center justify-center transform -translate-x-1/2"
                   />
                 ))}
               </div>

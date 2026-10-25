@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
 import os
-from urllib.parse import urlparse
 
 
 def _load_dotenv_if_exists() -> dict[str, str]:
@@ -22,26 +21,34 @@ class Settings:
     api_token: str
     owner_id: str
     db_path: Path
-    ollama_url: str
-    ollama_model: str
+    anthropic_api_key: str
+    model_heavy: str
+    model_light: str = "claude-haiku-4-5"
+    openrouter_api_key: str = ""
+    resend_api_key: str = ""
+    resend_from_email: str = ""
+    odin_alert_recipient: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
         file_env = _load_dotenv_if_exists()
+
         def get(key: str, default: str = "") -> str:
             return os.getenv(key) or file_env.get(key, default)
 
         token = get("RAGNAROK_API_TOKEN", "")
         if len(token) < 32 or token == "replace-with-at-least-32-random-characters":
             raise ValueError("RAGNAROK_API_TOKEN must be a private random value of at least 32 characters")
-        url = get("RAGNAROK_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-        parsed = urlparse(url)
-        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.username or parsed.password or parsed.path:
-            raise ValueError("Ollama URL must be an HTTP loopback origin")
+
         return cls(
             api_token=token,
             owner_id=get("RAGNAROK_OWNER_ID", "local-owner"),
             db_path=Path(get("RAGNAROK_DB_PATH", "./data/ragnarok.sqlite3")),
-            ollama_url=url,
-            ollama_model=get("RAGNAROK_OLLAMA_MODEL", "llama3.2"),
+            anthropic_api_key=get("ANTHROPIC_API_KEY", ""),
+            model_heavy=get("MODEL_HEAVY", "openai/gpt-oss-120b" if get("OPENROUTER_API_KEY") else "claude-sonnet-4-5"),
+            model_light=get("MODEL_LIGHT", "openai/gpt-oss-120b" if get("OPENROUTER_API_KEY") else "claude-haiku-4-5"),
+            openrouter_api_key=get("OPENROUTER_API_KEY", ""),
+            resend_api_key=get("RESEND_API_KEY", ""),
+            resend_from_email=get("RESEND_FROM_EMAIL", ""),
+            odin_alert_recipient=get("ODIN_ALERT_RECIPIENT", ""),
         )

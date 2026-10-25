@@ -2,16 +2,75 @@
 
 > **Beyond contract summaries. From static legal documents to a living, evidence-backed risk radar.**
 
-**Hackathon:** Quillhub Autonomous Contract Intelligence Challenge — *Trial of the Nine Realms*  
-**Project status:** Architecture roadmap. A working local runtime milestone is documented in [RAGNAROK_RUNTIME.md](RAGNAROK_RUNTIME.md); the multi-agent system described below remains a target.
+**Hackathon:** Quillhub Autonomous Contract Intelligence Challenge — *Trial of the Nine Realms*
 
-The implemented runtime currently provides durable tasks, local memory, Ollama-backed or deterministic evidence-checked finding runs, contract text ingestion, and staged operational event imports. Its finding status confirms source quotes and headings, not legal conclusions. See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) for the exact boundary between working code and planned features.
+---
+
+## 🚀 Running Locally
+
+### Prerequisites
+- **Python 3.11+** (tested on 3.12)
+- **Node.js 18+** and **npm**
+- An **OpenRouter API key** (`OPENROUTER_API_KEY`) for agent runs
+
+### 1 — Clone & set env vars
+
+```powershell
+# root .env (ignored by Git)
+RAGNAROK_API_TOKEN=<min 32 chars, keep the one already in .env>
+OPENROUTER_API_KEY=<your private key>
+MODEL_HEAVY=openai/gpt-oss-120b
+MODEL_LIGHT=openai/gpt-oss-120b
+```
+
+### 2 — Backend (Python API)
+
+```powershell
+# From repo root
+python -m pip install -e ".[test]"
+python -m ragnarok.cli migrate        # SQLite migrations (one-time)
+python -m ragnarok.cli doctor         # sanity check
+
+# Terminal 1 — API server
+python -m ragnarok.cli api            # → http://127.0.0.1:8000/docs
+
+# The five browser agents run in a checkpointed LangGraph background task.
+```
+
+> The browser uses an HTTP-only organization session. Legacy `/api/v1` routes still accept the private bearer token.
+
+### 3 — Frontend (Next.js)
+
+```powershell
+# From src/frontend/
+npm install                           # first time only
+npm run dev -- -p 3001               # → http://127.0.0.1:3001/login
+```
+
+### Tokens at a glance
+
+| Token | Where | Used for |
+|---|---|---|
+| `RAGNAROK_API_TOKEN` | root `.env` | Backend API bearer auth |
+| `OPENROUTER_API_KEY` | root `.env` | Five agent inference |
+
+> Browser accounts, contracts, agent outputs, and events are stored in the local SQLite database under `data/`. Docker is not required for this route.
+
+The graph uses a separate SQLite checkpoint file beside the app database. If the API stops mid-run, `POST /api/v1/workspace/agents/runs/{run_id}/resume` continues a `RUNNING` run from its last saved node. The current graph and its limits are documented in [LANGGRAPH_NOTES.md](LANGGRAPH_NOTES.md); its generated Mermaid diagram is [docs/graph.mmd](docs/graph.mmd).
+
+### Browser source uploads
+
+From **Organization & uploads**, upload `.txt` contracts, text-based `.pdf` contracts, or `.jsonl` files. JSONL event records (`event_id`, `timestamp`, `channel`, `from`, `to`, `subject`, `body`) enter the event ledger; JSONL records with `text` or `content` become source clauses. Malformed event lines are quarantined and counted. You can also paste contract text with a document name. PDF source files are retained and can be opened from citations. Scanned PDFs without selectable text need OCR or pasted text.
+
+---
+
+**Project status:** A working five-agent, evidence-gated browser workflow and five FR9 views are available at `/war-room`. It extracts cited terms, projects explicit dates, debates cited risks, stores rulings, and drafts notices for human review. Monetary exposure remains unquantified until a verified calculation is implemented. The broader architecture below is a roadmap; see [RAGNAROK_RUNTIME.md](RAGNAROK_RUNTIME.md) for legacy runtime details.
 
 ## The Problem
 
 Growing SaaS companies sign cloud-hosting, customer, security, and contractor agreements at different times. Individually, each contract may look reasonable; together, they can produce conflicting promises, missed deadlines, non-recoverable financial exposure, and compliance gaps. An ordinary LLM summary does not reliably track amendments, simulate future dates, connect operational events to contractual duties, or challenge its own conclusions.
 
-Our solution is **ODIN**, a multi-agent contract intelligence platform for the fictional company **Quillhub Inc.**, operator of the Route Optimizer SaaS platform. ODIN is designed to ingest a contract portfolio, reconstruct relationships between documents, track obligations across simulated dates, test possible risks adversarially, and recommend traceable actions for human review.
+Our solution is **ODIN**, a multi-agent contract intelligence platform for the organization entered during workspace setup. ODIN is designed to ingest a contract portfolio, reconstruct relationships between documents, track obligations across simulated dates, test possible risks adversarially, and recommend traceable actions for human review.
 
 ## Our Core Idea
 

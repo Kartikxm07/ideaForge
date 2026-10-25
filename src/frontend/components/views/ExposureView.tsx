@@ -133,7 +133,7 @@ export function ExposureView() {
                 <span className="font-bold text-rose-300 block">1. Gross Downstream Liabilities (Harbor + FleetFlow)</span>
                 <span className="text-[11px] text-slate-400">Contractual liquidated damages & withholdings</span>
               </div>
-              <span className="text-base font-bold text-rose-400">+${grossLiability.toLocaleString()}</span>
+              <span className="text-base font-bold text-rose-400" suppressHydrationWarning>+${grossLiability.toLocaleString("en-US")}</span>
             </div>
 
             {/* Step 2: Upstream Carrier Recovery Offset */}
@@ -142,7 +142,7 @@ export function ExposureView() {
                 <span className="font-bold text-cyan-300 block">2. Upstream StratoNode Service Credit Cap</span>
                 <span className="text-[11px] text-slate-400">15% Monthly hosting cap under A2 §4.2</span>
               </div>
-              <span className="text-base font-bold text-cyan-400">-${upstreamRecovery.toLocaleString()}</span>
+              <span className="text-base font-bold text-cyan-400" suppressHydrationWarning>-${upstreamRecovery.toLocaleString("en-US")}</span>
             </div>
 
             {/* Step 3: Insurance Policy Coverage Allowance */}
@@ -151,7 +151,7 @@ export function ExposureView() {
                 <span className="font-bold text-purple-300 block">3. Chubb Cyber Shield Policy Allocation</span>
                 <span className="text-[11px] text-slate-400">Policy CH-CYB-2026-99 deductible offset</span>
               </div>
-              <span className="text-base font-bold text-purple-400">-${insuranceBuffer.toLocaleString()}</span>
+              <span className="text-base font-bold text-purple-400" suppressHydrationWarning>-${insuranceBuffer.toLocaleString("en-US")}</span>
             </div>
 
             {/* Result: Net Uncovered Exposure */}
@@ -160,7 +160,7 @@ export function ExposureView() {
                 <span className="font-bold text-sm text-amber-300 block">NET UNCOVERED BALANCE (CAPITAL AT RISK)</span>
                 <span className="text-[11px] text-slate-400">Must be addressed via Tyr formal dispute notices</span>
               </div>
-              <span className="text-xl font-black text-amber-400">${netUncovered.toLocaleString()}</span>
+              <span className="text-xl font-black text-amber-400" suppressHydrationWarning>${netUncovered.toLocaleString("en-US")}</span>
             </div>
           </div>
         </div>

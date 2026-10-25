@@ -24,8 +24,8 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${dmSans.variable} ${jetbrainsMono.variable}`}>
-      <body className="min-h-dvh bg-[#FEFAF3] text-[#1A1208] antialiased selection:bg-amber-200/40 selection:text-amber-900">
+    <html lang="en" className={`${dmSans.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+      <body className="min-h-dvh bg-[#FEFAF3] text-[#1A1208] antialiased selection:bg-amber-200/40 selection:text-amber-900" suppressHydrationWarning>
         {children}
       </body>
     </html>

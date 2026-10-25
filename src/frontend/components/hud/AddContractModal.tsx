@@ -114,6 +114,7 @@ export function AddContractModal({ open, onClose, onAdd }: AddContractModalProps
     setSubmitted(true);
 
     onAdd?.({
+      // eslint-disable-next-line react-hooks/purity
       id: `CTR-${Date.now()}`,
       ...form,
       fileName: file!.name,

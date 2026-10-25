@@ -1,6 +1,6 @@
 export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
-export type AgentName = "Odin" | "Thor" | "Norns" | "Loki" | "Heimdall" | "Tyr";
+export type AgentName = "Thor" | "Norns" | "Loki" | "Heimdall" | "Tyr" | "Odin";
 
 export type CitationStatus = "EXACT" | "FUZZY" | "NOT_FOUND";
 
@@ -8,45 +8,70 @@ export type EvidenceType = "SOURCED" | "INFERRED" | "FLAGGED";
 
 export type FindingStatus = "PROMOTED" | "CONTESTED" | "DISMISSED";
 
+export type RiskLevel = "High" | "Medium" | "Low" | "No Risk";
+
+export type ContractStatus = "Active" | "Expiring" | "Amended" | "Pending" | "Terminated";
+
+export interface ClauseMetadata {
+  type: string;
+  startDate?: string;
+  initialTerm?: string;
+  noticePeriod?: string;
+  autoRenewal?: string;
+  confidence: number;
+  liabilityCap?: string;
+  slaTarget?: string;
+  creditTier?: string;
+  governingLaw?: string;
+}
+
 export interface Clause {
-  id: string; // e.g. "A2-S4.2"
+  id: string; // e.g. "A2-S4.2" or "saas-c2.1"
   contractId: string;
   contractTitle: string;
   section: string;
   heading: string;
   text: string;
   highlightSnippet?: string;
-  type: "uptime" | "liability" | "notice" | "termination" | "payment" | "ip" | "amendment";
+  type: "uptime" | "liability" | "notice" | "termination" | "payment" | "ip" | "amendment" | "renewal" | "compliance";
   confidence: number; // 0-1
   citationStatus: CitationStatus;
   evidenceType: EvidenceType;
   status: FindingStatus;
-  scoreBreakdown: {
+  page?: number;
+  sourceRef?: string;
+  metadata?: ClauseMetadata;
+  scoreBreakdown?: {
     citation: number; // 0-100
     confidence: number;
     agreement: number;
     external: number;
-    composite: number; // 65% gate
+    composite: number;
   };
-  provenance: {
+  provenance?: {
     extractedBy: AgentName;
     timestamp: string;
-    docOffset: number;
-    contentHash: string;
+    docOffset?: number;
+    contentHash?: string;
   };
 }
 
 export interface ContractNode {
-  id: string; // "STD", "A1", "A2", "A3", "B1", "B2", "C1", "D1"
+  id: string; // e.g. "C-01", "A1", "STD", "B1"
   title: string;
-  category: "upstream" | "customer" | "contractor" | "standard";
-  party: string;
-  effectiveDate: string;
-  expiryDate: string;
-  status: "ACTIVE" | "SUPERSEDED" | "AMENDED" | "EXPIRED";
+  counterparty: string;
+  party?: string;
+  category: "upstream" | "customer" | "contractor" | "standard" | "internal";
+  startDate: string;
+  endDate: string;
+  effectiveDate?: string;
+  expiryDate?: string;
+  riskLevel: RiskLevel;
+  status: ContractStatus;
   valueAnnual?: number;
   clausesCount: number;
   conflictsCount: number;
+  clauses?: Clause[];
 }
 
 export interface GraphEdge {
@@ -88,7 +113,7 @@ export interface ConflictFinding {
     round: number;
     question: string;
     answer: string;
-    confidenceDelta: [number, number]; // e.g. [0.55, 0.91]
+    confidenceDelta: [number, number];
   }[];
 }
 
@@ -106,6 +131,41 @@ export interface AlertItem {
   snoozed: boolean;
   suppressed?: boolean;
   suppressionReason?: string;
+}
+
+export interface UpcomingDeadline {
+  id: string;
+  month: string;
+  day: string;
+  title: string;
+  counterparty: string;
+  daysRemaining: string;
+  urgency: "urgent" | "warning" | "normal";
+}
+
+export interface AgentStatusInfo {
+  id: AgentName;
+  name: string;
+  role: string;
+  status: "Active" | "Idle" | "Running" | "Completed";
+  progress: number;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  icon: string;
+  contractsProcessed?: number;
+  clausesExtracted?: number;
+  avgConfidence?: number;
+  currentTask?: {
+    contractName: string;
+    step: string;
+    progress: number;
+  };
+  keyExtractions?: {
+    category: string;
+    count: number;
+    confidence: number;
+  }[];
 }
 
 export interface DraftedNotice {
@@ -149,11 +209,6 @@ export interface CheckpointSnapshot {
   avgConfidence: number;
   nextDeadlineDays: number;
   nextDeadlineLabel: string;
-  activeEvents: string[];
-  simulatedAlertDelta?: {
-    alertsCount: number;
-    exposureDelta: number;
-  };
 }
 
 export interface GanttContractSwimlane {
@@ -161,15 +216,17 @@ export interface GanttContractSwimlane {
   contractTitle: string;
   startDate: string;
   endDate: string;
-  renewalWindow: { start: string; end: string };
-  noticeDeadline: string;
-  paymentEvents: { date: string; amount: number; status: "PAID" | "MISSED" | "UPCOMING" }[];
-  holidayMarkers: { date: string; name: string }[];
+  milestones: {
+    date: string;
+    type: "payment" | "renewal" | "notice" | "penalty";
+    label: string;
+    amount?: number;
+  }[];
 }
 
 export interface HeatmapCell {
   row: string;
   col: string;
-  value: number; // 0-100 severity/exposure
+  value: number;
   findingIds: string[];
 }

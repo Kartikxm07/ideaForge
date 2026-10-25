@@ -43,8 +43,8 @@ export function ClauseDiffModal() {
               <h3 className="font-orbitron font-bold text-lg text-white">
                 {conflict.title}
               </h3>
-              <p className="text-xs text-slate-400 font-rajdhani uppercase tracking-wider mt-0.5">
-                Financial Exposure: ${conflict.financialExposure.toLocaleString()} • Likelihood: {conflict.likelihood}%
+              <p className="text-xs text-slate-400 font-rajdhani uppercase tracking-wider mt-0.5" suppressHydrationWarning>
+                Financial Exposure: ${conflict.financialExposure.toLocaleString("en-US")} • Likelihood: {conflict.likelihood}%
               </p>
             </div>
 

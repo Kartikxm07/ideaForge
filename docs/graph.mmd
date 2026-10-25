@@ -1,0 +1,55 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	ingest(ingest)
+	odin_plan(odin_plan)
+	thor(thor)
+	terms_merge(terms_merge)
+	checkpoint_init(checkpoint_init)
+	heimdall_1(heimdall_1)
+	norns(norns)
+	norns_scenario(norns_scenario)
+	snapshot(snapshot)
+	checkpoint_advance(checkpoint_advance)
+	completeness_gate(completeness_gate)
+	synthesis(synthesis)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> ingest;
+	checkpoint_advance --> checkpoint_init;
+	checkpoint_init --> heimdall_1;
+	completeness_gate --> synthesis;
+	debate\3a__end__ --> norns_scenario;
+	heimdall_1 --> norns;
+	ingest --> odin_plan;
+	norns --> debate\3aloki;
+	norns_scenario --> snapshot;
+	odin_plan -.-> terms_merge;
+	odin_plan -.-> thor;
+	snapshot -.-> checkpoint_advance;
+	snapshot -.-> completeness_gate;
+	terms_merge --> checkpoint_init;
+	thor --> terms_merge;
+	synthesis --> __end__;
+	subgraph debate
+	debate\3aloki(loki)
+	debate\3aheimdall_2(heimdall_2)
+	debate\3aodin_router(odin_router)
+	debate\3aloki_rebut(loki_rebut)
+	debate\3atyr(tyr)
+	debate\3a__end__(<p>__end__</p>)
+	debate\3aheimdall_2 --> debate\3aodin_router;
+	debate\3aloki -.-> debate\3a__end__;
+	debate\3aloki -.-> debate\3aheimdall_2;
+	debate\3aloki_rebut --> debate\3aheimdall_2;
+	debate\3aodin_router -.-> debate\3aloki_rebut;
+	debate\3aodin_router -.-> debate\3atyr;
+	debate\3atyr -.-> debate\3a__end__;
+	debate\3atyr -.-> debate\3aheimdall_2;
+	end
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

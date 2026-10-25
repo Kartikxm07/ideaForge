@@ -62,6 +62,22 @@ def add_event(store: Store, owner_id: str, event: OperationalEvent, source: str 
         return created
 
 
+def import_event_records(store: Store, owner_id: str, filename: str, events: list[OperationalEvent], errors: list[tuple[int, str, str]]) -> dict:
+    """Persist a browser JSONL drop and quarantine malformed lines atomically."""
+    if not events and not errors:
+        raise ValueError("JSONL event file is empty")
+    with store.connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        created = sum(_insert(db, owner_id, event, f"browser:{filename}") for event in events)
+        for line_number, line, error_type in errors:
+            db.execute(
+                "INSERT OR IGNORE INTO event_import_errors(id,owner_id,source_file,line_number,line_sha256,error_type,recorded_at) VALUES(?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), owner_id, filename, line_number, sha256(line.encode("utf-8")).hexdigest(), error_type, now()),
+            )
+        Store.audit(db, owner_id, "event.import", filename, f"created:{created};quarantined:{len(errors)}")
+        return {"kind": "events", "records": len(events) + len(errors), "created": created, "duplicates": len(events) - created, "quarantined": len(errors)}
+
+
 def import_event_drop(store: Store, owner_id: str, path: Path) -> dict:
     file = path.resolve(strict=True)
     if file.suffix.lower() != ".jsonl" or file.stat().st_size > 2_000_000:

@@ -25,7 +25,7 @@ function KpiCard({
   label: string;
   value: string;
   sub?: string;
-  icon: any;
+  icon: React.ComponentType<{ className?: string }>;
   variant?: "gold" | "crimson" | "emerald" | "blue";
   delay?: number;
   tooltip?: string;
@@ -80,7 +80,7 @@ export function KpiStrip() {
     <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 stagger fade-in-up">
       <KpiCard
         label="Total Exposure"
-        value={`$${currentSnapshot.totalExposure.toLocaleString()}`}
+        value={`$${currentSnapshot.totalExposure.toLocaleString("en-US")}`}
         sub="Gross: $88.5k · +18.2% delta"
         icon={DollarSign}
         variant="crimson"
@@ -89,7 +89,7 @@ export function KpiStrip() {
       />
       <KpiCard
         label="Net Gap"
-        value={`$${currentSnapshot.netUncoveredGap.toLocaleString()}`}
+        value={`$${currentSnapshot.netUncoveredGap.toLocaleString("en-US")}`}
         sub="StratoNode vs Harbor SLA"
         icon={Scale}
         variant="gold"

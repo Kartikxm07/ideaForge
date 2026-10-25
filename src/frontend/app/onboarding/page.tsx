@@ -1,332 +1,81 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Building2,
-  FileText,
-  Upload,
-  CheckCircle2,
-  X,
-  Plus,
-  ArrowRight,
-  Scale,
-  ShieldCheck,
-  ChevronRight,
-  Lock,
-} from "lucide-react";
+import { Building2, FileText, UploadCloud } from "lucide-react";
+import { odinApi, odinUploadFile } from "@/lib/odin-api";
 
-interface Signatory {
-  name: string;
-  role: string;
-}
-
-interface ContractItem {
-  name: string;
-  content: string;
-  size: number;
-}
+type Settings = { name: string; organization: string; notifications: boolean };
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const [step, setStep] = useState<1 | 2>(1);
+  const [name, setName] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [pasteTitle, setPasteTitle] = useState("");
+  const [pasteText, setPasteText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState("");
 
-  // Form states
-  const [legalName, setLegalName] = useState("");
-  const [industry, setIndustry] = useState("Finance & Fintech");
-  const [jurisdiction, setJurisdiction] = useState("Delaware, USA");
-  const [email, setEmail] = useState("");
-  const [signatories, setSignatories] = useState<Signatory[]>([
-    { name: "", role: "Managing Director" },
-  ]);
+  useEffect(() => {
+    odinApi<Settings>("/workspace/settings").then(s => { setName(s.name); setOrganization(s.organization); }).catch(() => router.replace("/login"));
+  }, [router]);
 
-  // Contracts
-  const [contracts, setContracts] = useState<ContractItem[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  function pick(event: ChangeEvent<HTMLInputElement>) {
+    const chosen = Array.from(event.target.files || []);
+    setFiles(previous => [...previous, ...chosen]);
+    event.target.value = "";
+  }
 
-  const addSignatory = () => {
-    setSignatories((prev) => [...prev, { name: "", role: "General Counsel" }]);
-  };
+  async function save() {
+    setBusy(true); setError(""); setSaved("");
+    try {
+      await odinApi("/workspace/settings", { method: "PATCH", body: JSON.stringify({ name, organization, notifications: true }) });
+      const reports: string[] = [];
+      const failures: string[] = [];
+      const retryFiles: File[] = [];
+      if (pasteText.trim()) {
+        try {
+          const stem = pasteTitle.trim().replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_.-]/g, "-").slice(0, 80);
+          if (!stem) throw new Error("Give pasted contract text a document name");
+          await odinApi("/workspace/upload", { method: "POST", body: JSON.stringify({ document_key: stem, title: pasteTitle.trim(), content: pasteText.trim() }) });
+          reports.push("Pasted contract saved"); setPasteTitle(""); setPasteText("");
+        } catch (cause) { failures.push(`Pasted text: ${cause instanceof Error ? cause.message : "Upload failed"}`); }
+      }
+      for (const file of files) {
+        try {
+          const result = await odinUploadFile(file);
+          reports.push(result.kind === "events" ? `${file.name}: ${result.created ?? 0} events imported${result.quarantined ? `, ${result.quarantined} malformed lines skipped` : ""}` : `${file.name}: contract saved${result.quarantined ? `, ${result.quarantined} malformed lines skipped` : ""}`);
+        } catch (cause) { retryFiles.push(file); failures.push(`${file.name}: ${cause instanceof Error ? cause.message : "Upload failed"}`); }
+      }
+      setSaved(reports.length ? reports.join(" · ") : "Organization saved");
+      setFiles(retryFiles);
+      if (failures.length) setError(failures.join(" · "));
+      else router.push("/war-room");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Save failed"); }
+    finally { setBusy(false); }
+  }
 
-  const updateSignatory = (idx: number, field: "name" | "role", val: string) => {
-    setSignatories((prev) =>
-      prev.map((s, i) => (i === idx ? { ...s, [field]: val } : s))
-    );
-  };
-
-  const removeSignatory = (idx: number) => {
-    setSignatories((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const handleFileUpload = (files: FileList | null) => {
-    if (!files) return;
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setContracts((prev) => [
-          ...prev,
-          {
-            name: file.name,
-            content: (e.target?.result as string) || "",
-            size: file.size,
-          },
-        ]);
-      };
-      reader.readAsText(file);
-    });
-  };
-
-  const canProceedStep1 = legalName.trim().length > 0;
-
-  return (
-    <div className="min-h-screen bg-[#FDFBF7] text-[#18181B] flex flex-col justify-between">
-      {/* Top minimal header */}
-      <header className="border-b border-black/[0.06] bg-white/70 backdrop-blur-md px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#D4A017] flex items-center justify-center text-white font-semibold">
-            <Scale className="w-4 h-4" />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold tracking-tight">ODIN</h1>
-            <p className="text-[11px] text-zinc-500 font-medium">Financial Solutions</p>
-          </div>
+  return <main className="min-h-screen bg-[#eaf2fa] px-5 py-12 text-[#112b49]">
+    <div className="max-w-2xl mx-auto"><header className="flex items-center gap-3 mb-9"><span className="text-3xl text-[#d4a017]">◭</span><div><b className="text-xl">ODIN</b><p className="text-xs text-slate-500">Workspace setup</p></div></header>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-7 sm:p-9">
+        <p className="text-xs font-bold uppercase tracking-widest text-[#b98721]">Organization</p>
+        <h1 className="text-2xl font-bold mt-2">Set up your contract workspace</h1>
+        <p className="text-sm text-slate-500 mt-2">Your entered company name appears in the dashboard. Upload contracts and event records, or paste source text below.</p>
+        <div className="mt-7 space-y-4">
+          <label className="block text-sm font-semibold">Your name<input required value={name} onChange={e => setName(e.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2.5 focus:border-[#d4a017] outline-none"/></label>
+          <label className="block text-sm font-semibold">Company name<div className="relative mt-2"><Building2 className="absolute left-3 top-3 text-slate-400" size={18}/><input required value={organization} onChange={e => setOrganization(e.target.value)} className="w-full rounded-lg border border-slate-200 pl-10 pr-3 py-2.5 focus:border-[#d4a017] outline-none"/></div></label>
         </div>
-
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          <span className={`px-2.5 py-1 rounded-md font-medium ${step === 1 ? "bg-amber-100 text-amber-900 font-semibold" : "text-zinc-600"}`}>
-            1. Organization
-          </span>
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
-          <span className={`px-2.5 py-1 rounded-md font-medium ${step === 2 ? "bg-amber-100 text-amber-900 font-semibold" : "text-zinc-600"}`}>
-            2. Contracts
-          </span>
+        <div className="mt-9"><p className="text-sm font-semibold">Source files</p><p className="text-xs text-slate-500 mt-1">TXT and text-based PDF become cited contracts. JSONL event records go to the event feed; JSONL text records become contract clauses.</p>
+          <label onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); setFiles(previous => [...previous, ...Array.from(event.dataTransfer.files)]); }} className="mt-3 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-8 hover:border-[#d4a017]"><UploadCloud size={27} className="text-[#d4a017]"/><span className="mt-2 text-sm font-medium">Choose or drop .txt, .pdf or .jsonl files</span><span className="mt-1 text-xs text-slate-500">Up to 12 MB per file · scanned PDFs need OCR or pasted text</span><input multiple type="file" accept=".txt,.pdf,.jsonl,text/plain,application/pdf,application/x-ndjson" className="sr-only" onChange={pick}/></label>
+          {files.length > 0 && <div className="mt-3 space-y-2">{files.map((file, index) => <div key={`${file.name}-${index}`} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="flex min-w-0 items-center gap-2 truncate"><FileText size={16}/>{file.name}</span><button type="button" onClick={() => setFiles(previous => previous.filter((_, i) => i !== index))} className="text-xs font-semibold text-slate-500 hover:text-red-700">Remove</button></div>)}</div>}
+          <div className="mt-6 border-t border-slate-100 pt-5"><p className="text-sm font-semibold">Or paste contract text</p><p className="mt-1 text-xs text-slate-500">Use this for copied PDF text or a contract from another source. ODIN checks citations against exactly what you paste.</p><input value={pasteTitle} onChange={event => setPasteTitle(event.target.value)} placeholder="Document name, e.g. Vendor Agreement" className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#d4a017]"/><textarea value={pasteText} onChange={event => setPasteText(event.target.value)} placeholder="Paste the agreement or clause text here…" rows={7} className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#d4a017]"/></div>
         </div>
-      </header>
-
-      {/* Main card */}
-      <main className="flex-1 max-w-2xl w-full mx-auto px-6 py-10 flex flex-col justify-center">
-        {step === 1 ? (
-          <div className="bg-white border border-black/[0.08] rounded-2xl p-8 shadow-sm">
-            <div className="mb-6">
-              <span className="text-xs font-semibold tracking-wider uppercase text-amber-800">
-                Setup Organization
-              </span>
-              <h2 className="text-xl font-bold text-zinc-900 mt-1">
-                Enter Entity & Signatory Information
-              </h2>
-              <p className="text-xs text-zinc-500 mt-1">
-                Provide legal structure data to anchor compliance scanning.
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1.5">
-                  Legal Entity Name
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={legalName}
-                    onChange={(e) => setLegalName(e.target.value)}
-                    placeholder="e.g. Asgard Strategic Holdings LLC"
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:border-amber-600 focus:ring-1 focus:ring-amber-600"
-                  />
-                  <Building2 className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1.5">
-                    Industry / Sector
-                  </label>
-                  <select
-                    value={industry}
-                    onChange={(e) => setIndustry(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:border-amber-600"
-                  >
-                    <option>Finance & Fintech</option>
-                    <option>Asset Management</option>
-                    <option>Corporate Law</option>
-                    <option>Commercial Real Estate</option>
-                    <option>Logistics & Supply</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1.5">
-                    Jurisdiction
-                  </label>
-                  <input
-                    type="text"
-                    value={jurisdiction}
-                    onChange={(e) => setJurisdiction(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:border-amber-600"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold text-zinc-700">
-                    Authorized Signatories
-                  </label>
-                  <button
-                    type="button"
-                    onClick={addSignatory}
-                    className="text-xs font-semibold text-amber-700 hover:text-amber-800 flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {signatories.map((sig, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <input
-                        type="text"
-                        placeholder="Signatory Full Name"
-                        value={sig.name}
-                        onChange={(e) => updateSignatory(idx, "name", e.target.value)}
-                        className="flex-1 px-3 py-2 rounded-lg border border-zinc-200 text-xs focus:outline-none focus:border-amber-600"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Designation"
-                        value={sig.role}
-                        onChange={(e) => updateSignatory(idx, "role", e.target.value)}
-                        className="w-1/3 px-3 py-2 rounded-lg border border-zinc-200 text-xs focus:outline-none focus:border-amber-600"
-                      />
-                      {signatories.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeSignatory(idx)}
-                          className="p-1.5 text-zinc-400 hover:text-red-500 rounded"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 flex justify-end">
-              <button
-                type="button"
-                disabled={!canProceedStep1}
-                onClick={() => setStep(2)}
-                className="inline-flex items-center gap-2 bg-[#D4A017] hover:bg-[#B8880E] disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-sm px-6 py-2.5 rounded-lg shadow-sm transition-all"
-              >
-                <span>Continue to Contracts</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="bg-white border border-black/[0.08] rounded-2xl p-8 shadow-sm">
-            <div className="mb-6">
-              <span className="text-xs font-semibold tracking-wider uppercase text-amber-800">
-                Contract Ingestion
-              </span>
-              <h2 className="text-xl font-bold text-zinc-900 mt-1">
-                Upload Master Agreements & Terms
-              </h2>
-              <p className="text-xs text-zinc-500 mt-1">
-                Drag and drop your agreements (.txt / documents) to scan for obligations.
-              </p>
-            </div>
-
-            {/* Dropzone */}
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDragging(false);
-                handleFileUpload(e.dataTransfer.files);
-              }}
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
-                isDragging
-                  ? "border-amber-600 bg-amber-50/50"
-                  : "border-zinc-300 hover:border-zinc-400 bg-zinc-50/50"
-              }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept=".txt,.doc,.docx,.pdf"
-                className="hidden"
-                onChange={(e) => handleFileUpload(e.target.files)}
-              />
-              <Upload className="w-8 h-8 text-zinc-400 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-zinc-700">
-                Click to browse or drop agreements here
-              </p>
-              <p className="text-xs text-zinc-400 mt-1">
-                Accepts text files and contracts
-              </p>
-            </div>
-
-            {/* Ingested List */}
-            {contracts.length > 0 && (
-              <div className="mt-4 space-y-2">
-                <p className="text-xs font-semibold text-zinc-600">Loaded Documents ({contracts.length})</p>
-                {contracts.map((c, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 bg-zinc-50/70 text-xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-amber-700" />
-                      <span className="font-medium text-zinc-800">{c.name}</span>
-                      <span className="text-zinc-400 text-[10px]">({Math.round(c.size / 1024)} KB)</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setContracts((prev) => prev.filter((_, idx) => idx !== i))}
-                      className="text-zinc-400 hover:text-red-500"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-8 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="text-xs font-semibold text-zinc-500 hover:text-zinc-800"
-              >
-                Back
-              </button>
-
-              <button
-                type="button"
-                onClick={() => router.push("/war-room")}
-                className="inline-flex items-center gap-2 bg-[#D4A017] hover:bg-[#B8880E] text-white font-semibold text-sm px-6 py-2.5 rounded-lg shadow-sm transition-all"
-              >
-                <span>Launch Analytics</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-      </main>
-
-      <footer className="text-center py-4 text-xs text-zinc-400">
-        ODIN Platform · Institutional Financial Solutions
-      </footer>
+        {error && <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        {saved && <p role="status" className="mt-4 text-sm text-emerald-700">{saved}</p>}
+        <button disabled={busy || !name.trim() || !organization.trim()} onClick={save} className="mt-8 w-full rounded-lg bg-[#112b49] py-3 text-sm font-semibold text-white hover:bg-[#1c4169] disabled:opacity-50">{busy ? "Saving…" : "Open dashboard"}</button>
+      </div>
     </div>
-  );
+  </main>;
 }

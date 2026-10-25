@@ -1,15 +1,11 @@
 import { create } from "zustand";
 import {
-  MOCK_SNAPSHOTS,
   MOCK_CONTRACTS,
-  MOCK_CLAUSES,
   MOCK_GRAPH_EDGES,
   MOCK_CONFLICTS,
-  MOCK_ALERTS,
   MOCK_ACTIONS,
-  MOCK_SWIMLANES,
-  MOCK_HEATMAP,
 } from "@/mock/odinData";
+import { MOCK_SNAPSHOTS, MOCK_CLAUSES, MOCK_ALERTS, MOCK_SWIMLANES, MOCK_HEATMAP } from "@/mock/previewData";
 import {
   CheckpointSnapshot,
   ContractNode,

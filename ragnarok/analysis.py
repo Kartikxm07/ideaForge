@@ -65,7 +65,7 @@ def create_run(store: Store, owner_id: str, question: str, focus: str, keys: lis
         raise ValueError("Select 1 to 3 distinct source documents")
     if any(not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", key) for key in keys):
         raise ValueError("Invalid document key")
-    if provider_kind not in {"ollama", "deterministic"}:
+    if provider_kind not in {"anthropic", "ollama", "deterministic"}:
         raise ValueError("Unsupported analysis provider")
     if provider_kind == "deterministic" and (len(keys) != 2 or "uptime" not in focus.casefold()):
         raise ValueError("Deterministic analysis currently compares uptime text in exactly two documents")
