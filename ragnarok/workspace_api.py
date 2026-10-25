@@ -19,6 +19,7 @@ from .model import ClaudeProvider
 from .store import Store, now
 from .agents import AGENTS, contract_warning, execute_run, latest_view as latest_agent_view, run_view as agent_run_view, start_run as start_agent_run
 from .email_delivery import EmailDeliveryError, send_approved_alert
+from .thor_bridge import prepare_anchor, submit_anchor, verify_anchor_receipt
 from .operational_events import OperationalEvent, add_event, import_event_records, list_events
 from .upload_formats import MAX_UPLOAD_BYTES, decode_text, extract_pdf, parse_jsonl, safe_document_key
 
@@ -354,6 +355,44 @@ def install_workspace(app, store, settings, owner, session):
             raise HTTPException(404, "Agent run not found")
         return result
 
+    def require_anchorable_run(run_id: str, s):
+        if s["role"] != "admin":
+            raise HTTPException(403, "Administrator permission required")
+        result = agent_run_view(store, s["org_id"], run_id)
+        if not result:
+            raise HTTPException(404, "Agent run not found")
+        if result["status"] not in ("COMPLETE", "INCOMPLETE") or not result["extractions"]:
+            raise HTTPException(409, "Thor must finish verified extraction before anchoring")
+        return result
+
+    @router.post("/agents/runs/{run_id}/anchor/prepare")
+    def prepare_run_anchor(run_id: str, s=Depends(session)):
+        require_anchorable_run(run_id, s)
+        try:
+            return prepare_anchor(store.path, run_id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @router.post("/agents/runs/{run_id}/anchor/submit")
+    def submit_run_anchor(run_id: str, s=Depends(session)):
+        require_anchorable_run(run_id, s)
+        try:
+            return submit_anchor(store.path, run_id, settings)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(503, f"Sepolia submission incomplete ({type(exc).__name__})") from exc
+
+    @router.get("/agents/runs/{run_id}/anchor/receipt")
+    def run_anchor_receipt(run_id: str, s=Depends(session)):
+        require_anchorable_run(run_id, s)
+        try:
+            return verify_anchor_receipt(store.path, run_id, settings)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(503, f"Sepolia receipt unavailable ({type(exc).__name__})") from exc
+
     @router.post("/agents/email-drafts/{draft_id}/approve")
     def approve_email_draft(draft_id: str, body: EmailDraftApproval, s=Depends(session)):
         if s["role"] != "admin":
@@ -613,7 +652,20 @@ def install_workspace(app, store, settings, owner, session):
                     yield 'event: expired\ndata: {}\n\n'
                     break
                 with store.connect() as db:
-                    state = json.dumps([(r["id"], r["status"], r["updated_at"]) for r in runs(db, actor)])
+                    analysis = [(r["id"], r["status"], r["updated_at"]) for r in runs(db, actor)]
+                    agent_runs = db.execute(
+                        "SELECT id,updated_at,json_extract(data,'$.status') status FROM web_records "
+                        "WHERE owner_id=? AND kind='agent-run' ORDER BY updated_at DESC LIMIT 5", (actor,)
+                    ).fetchall()
+                    messages = db.execute(
+                        "SELECT count(*) count,max(updated_at) updated_at FROM web_records "
+                        "WHERE owner_id=? AND kind='agent-message'", (actor,)
+                    ).fetchone()
+                    state = json.dumps({
+                        "analysis": analysis,
+                        "agent_runs": [(r["id"], r["status"], r["updated_at"]) for r in agent_runs],
+                        "messages": [messages["count"], messages["updated_at"]],
+                    })
                 if state != previous:
                     yield 'event: update\ndata: '+state+'\n\n'
                     previous = state

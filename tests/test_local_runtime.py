@@ -150,7 +150,7 @@ def test_schema_upgrades_existing_local_database(tmp_path):
         db.execute("PRAGMA user_version=1")
     Store(path).migrate()
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
         assert db.execute("SELECT name FROM sqlite_master WHERE name='documents'").fetchone() is not None
         assert db.execute("SELECT name FROM sqlite_master WHERE name='analysis_runs'").fetchone() is not None
         assert db.execute("SELECT name FROM sqlite_master WHERE name='operational_events'").fetchone() is not None

@@ -28,6 +28,8 @@ class Settings:
     resend_api_key: str = ""
     resend_from_email: str = ""
     odin_alert_recipient: str = ""
+    thor_sepolia_rpc_url: str = ""
+    thor_testnet_private_key: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -51,4 +53,6 @@ class Settings:
             resend_api_key=get("RESEND_API_KEY", ""),
             resend_from_email=get("RESEND_FROM_EMAIL", ""),
             odin_alert_recipient=get("ODIN_ALERT_RECIPIENT", ""),
+            thor_sepolia_rpc_url=get("THOR_SEPOLIA_RPC_URL", ""),
+            thor_testnet_private_key=get("THOR_TESTNET_PRIVATE_KEY", ""),
         )

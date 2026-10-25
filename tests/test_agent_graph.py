@@ -21,11 +21,15 @@ class DebateModel:
 
     def _call(self, prompt, _model, _limit):
         self.calls.append(prompt)
+        if "You are Odin" in prompt:
+            return '{"objective":"Analyze contracts","workstreams":[{"document_key":"A","focus":["terms"]}]}'
         if "You are Thor" in prompt:
             key = prompt.split("Document key: ", 1)[1].split(".", 1)[0]
             quote = "Customer shall pay $500 on 2027-03-15."
             return json.dumps({"items": [{"field": "payment", "value": quote, "confidence": 0.9,
                 "citation": {"document_key": key, "clause_ref": "Section 1. Payment", "quote": quote}}]})
+        if "Act as Thor's evidence advocate" in prompt:
+            return '{"answer":"The verified payment chunk supports the extracted date.","supported":true,"citation_ids":[]}'
         if "You are Loki, adversarial" in prompt:
             return json.dumps({"findings": [{"claim": "Payment timing may be disputed", "reasoning": "Check both terms",
                 "severity": "medium", "citations": [{"document_key": "A", "clause_ref": "Section 1. Payment",
@@ -91,17 +95,18 @@ def test_resume_does_not_repeat_completed_thor_call(tmp_path):
     with pytest.raises(KeyboardInterrupt):
         execute_run(store, "org", run["id"], model)
     assert run_view(store, "org", run["id"])["status"] == "RUNNING"
-    assert sum("You are Thor" in call for call in model.calls) == 1
+    before = [item["id"] for item in run_view(store, "org", run["id"])["extractions"]]
+    assert before
     execute_run(store, "org", run["id"], model)
     assert run_view(store, "org", run["id"])["status"] == "COMPLETE"
-    assert sum("You are Thor" in call for call in model.calls) == 1
+    assert [item["id"] for item in run_view(store, "org", run["id"])["extractions"]] == before
 
 
 def test_exported_graph_matches_compiled_topology(tmp_path):
     graph = build_graph(Store(tmp_path / "odin.sqlite3"), "org", "diagram", DebateModel())
     exported = (Path(__file__).resolve().parents[1] / "docs" / "graph.mmd").read_text(encoding="utf-8")
     assert graph.get_graph(xray=True).draw_mermaid() == exported
-    for node in ("thor", "loki", "heimdall_2", "odin_router", "loki_rebut", "tyr", "completeness_gate"):
+    for node in ("thor", "loki", "thor_clarify", "heimdall_2", "odin_router", "loki_rebut", "tyr", "completeness_gate"):
         assert node in exported
 
 

@@ -16,6 +16,8 @@ class ShortFakeModel:
         self.thor_calls = 0
 
     def _call(self, prompt, _model, _limit):
+        if "You are Odin" in prompt:
+            return '{"objective":"Analyze","workstreams":[{"document_key":"LONG","focus":["terms"]}]}'
         if "You are Thor" in prompt:
             self.thor_calls += 1
             chunk = prompt.split("\nText:\n", 1)[1]
@@ -53,6 +55,8 @@ def test_long_contract_is_chunked_and_runs(tmp_path):
     model = ShortFakeModel()
     execute_run(store, "org", run["id"], model)
     result = run_view(store, "org", run["id"])
-    assert model.thor_calls == len(chunks)
+    assert model.thor_calls == 0  # LangGraph delegates extraction to thor_agent.
     assert result["status"] == "COMPLETE"
-    assert len(result["extractions"]) == len(chunks)
+    assert result["extractions"]
+    evidence = tmp_path / "thor_runs" / run["id"] / "evidence.sqlite3"
+    assert evidence.is_file()

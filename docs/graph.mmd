@@ -36,6 +36,7 @@ graph TD;
 	synthesis --> __end__;
 	subgraph debate
 	debate\3aloki(loki)
+	debate\3athor_clarify(thor_clarify)
 	debate\3aheimdall_2(heimdall_2)
 	debate\3aodin_router(odin_router)
 	debate\3aloki_rebut(loki_rebut)
@@ -43,12 +44,13 @@ graph TD;
 	debate\3a__end__(<p>__end__</p>)
 	debate\3aheimdall_2 --> debate\3aodin_router;
 	debate\3aloki -.-> debate\3a__end__;
-	debate\3aloki -.-> debate\3aheimdall_2;
+	debate\3aloki -. &nbsp;heimdall_2&nbsp; .-> debate\3athor_clarify;
 	debate\3aloki_rebut --> debate\3aheimdall_2;
 	debate\3aodin_router -.-> debate\3aloki_rebut;
 	debate\3aodin_router -.-> debate\3atyr;
+	debate\3athor_clarify --> debate\3aheimdall_2;
 	debate\3atyr -.-> debate\3a__end__;
-	debate\3atyr -.-> debate\3aheimdall_2;
+	debate\3atyr -. &nbsp;heimdall_2&nbsp; .-> debate\3athor_clarify;
 	end
 	classDef default fill:#f2f0ff,line-height:1.2
 	classDef first fill-opacity:0

@@ -24,7 +24,7 @@ def main() -> None:
         from .analysis import run_analysis_once
         from .model import OllamaProvider
         provider = OllamaProvider(settings)
-        print(f"[Ragnarok Worker] Started. Listening on {settings.db_path} (owner: {settings.owner_id}, model: {settings.ollama_model})")
+        print(f"[Ragnarok Worker] Started. Listening on {settings.db_path} (owner: {settings.owner_id}, model: {settings.model_heavy})")
         print("[Ragnarok Worker] Polling for tasks from API... (Press Ctrl+C to stop)")
         try:
             while True:
