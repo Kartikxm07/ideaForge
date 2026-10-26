@@ -1,0 +1,7 @@
+date,from,to,amount,reference,status
+2026-09-01,Quillhub Inc.,StratoNode Inc.,12500.00,INV-2026-0901,cleared
+2026-10-01,Quillhub Inc.,StratoNode Inc.,12500.00,INV-2026-1001,cleared
+2026-10-15,Harbor Retail Solutions LLC,Quillhub Inc.,45000.00,REC-2026-1015,cleared
+2026-11-01,Quillhub Inc.,StratoNode Inc.,12500.00,INV-2026-1101,cleared
+2026-11-15,Vantage Logistics Corp.,Quillhub Inc.,30000.00,REC-2026-1115,pending
+2026-11-20,Quillhub Inc.,Pixelwright Design Studio LLC,8500.00,INV-PIX-101,cleared

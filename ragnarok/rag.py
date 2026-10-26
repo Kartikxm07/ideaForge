@@ -217,7 +217,14 @@ def hybrid_search(store: Store, owner: str, query: str, document_keys: list[str]
 
     # ── Leg 1: BM25 sparse ───────────────────────────────────────────────────
     # FTS5 match; sanitise query (remove FTS special chars)
-    safe_q = re.sub(r'[^a-zA-Z0-9 ]', ' ', query).strip() or "contract"
+    # FTS5 treats spaces as AND. Natural-language questions then return zero
+    # rows whenever one ordinary word is absent from a chunk.
+    stop = {"the", "and", "for", "from", "with", "what", "was", "were", "does",
+            "any", "are", "its", "that", "this", "into", "under", "currently",
+            "which", "when", "where", "cited", "cite", "specific", "terms"}
+    terms = [term for term in re.findall(r"[A-Za-z0-9]+", query.lower())
+             if len(term) >= 3 and term not in stop]
+    safe_q = " OR ".join(dict.fromkeys(terms)) or "contract"
     sparse_scores: dict[str, float] = {}
     sparse_texts:  dict[str, dict]  = {}
     try:
