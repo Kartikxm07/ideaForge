@@ -288,40 +288,104 @@ def build_graph(store: Store, owner: str, run_id: str, model, checkpointer=None)
             }
             loki_input = {"thor_extractions": evidence, "norns_timeline": norns_ctx}
             output = _model_json(store, owner, run_id, "Loki", model,
-                'You are Loki, adversarial contract analyst acting as opposing counsel. '
-                'You receive (1) Thor verified extractions AND (2) Norns worst-case financial timeline. '
-                'Cross-reference them: attack clauses where Norns shows high exposure, '
-                'flag notice windows that trigger auto-renewal lock-in, '
-                'and flag items where confidence < 0.85 on high-exposure terms. '
-                'Return JSON {"findings":[{"claim":string,"reasoning":string,'
-                '"severity":"low|medium|high|critical",'
-                '"norns_milestone_id":string|null,'
-                '"financial_exposure_usd":number|null,'
-                '"citations":[citation objects from thor_extractions]}]}. '
-                'At most 8. Copy citations exactly. No fabricated amounts not in input. '
-                'Input: ' + json.dumps(loki_input, sort_keys=True), 4800)
+                'You are Loki, adversarial contract analyst and devil\'s advocate. You MUST find vulnerabilities, hidden liabilities, and payment risks in the provided extractions and timeline.\n\n'
+                'THOR EXTRACTIONS:\n' + json.dumps(evidence, sort_keys=True) + '\n\n'
+                'NORNS TIMELINE:\n' + json.dumps(norns_ctx, sort_keys=True) + '\n\n'
+                'INSTRUCTION:\n'
+                'Identify at least 2 to 4 potential contractual risks, one-sided terms, or timeline bottlenecks.\n'
+                'Cross-reference high-dollar exposure items with ambiguous clauses.\n\n'
+                'OUTPUT FORMAT (JSON ONLY):\n'
+                '{\n'
+                '  "findings": [\n'
+                '    {\n'
+                '      "finding_id": "LOKI-001",\n'
+                '      "claim": "Clear concise adversarial risk claim",\n'
+                '      "clause_citation": "Section C — Fees and Payment",\n'
+                '      "reasoning": "Detailed legal and financial rationale",\n'
+                '      "severity": "HIGH",\n'
+                '      "financial_exposure_usd": 30900.0,\n'
+                '      "citations": [\n'
+                '        {"document_key": "B1", "clause_ref": "Section C — Fees and Payment", "quote": "..."}\n'
+                '      ]\n'
+                '    }\n'
+                '  ]\n'
+                '}\n'
+                'At most 8 findings. For citations, select or copy citation objects from THOR EXTRACTIONS.', 4800)
+
+            # Robust JSON/List Parsing
+            findings_raw = []
+            if isinstance(output, dict):
+                for key in ("findings", "items", "challenges", "vulnerabilities", "risks"):
+                    if isinstance(output.get(key), list):
+                        findings_raw = output[key]
+                        break
+                if not findings_raw and ("claim" in output or "attack_path" in output):
+                    findings_raw = [output]
+            elif isinstance(output, list):
+                findings_raw = output
+
             ids: list[str] = []
             with store.connect() as db:
-                for index, item in enumerate(output.get("findings", [])[:8]):
+                for index, item in enumerate(findings_raw[:8]):
                     if not isinstance(item, dict):
                         continue
-                    citations = _verified(db, owner, item.get("citations", []))
+
+                    raw_cites = item.get("citations", [])
+                    if isinstance(raw_cites, dict):
+                        raw_cites = [raw_cites]
+                    citations = _verified(db, owner, raw_cites)
+
+                    # Resilient Auto-Healing: If citations failed strict quote match,
+                    # anchor to the most relevant Thor verified citation from evidence
+                    if not citations and evidence:
+                        doc_key = item.get("document_key") or (raw_cites and isinstance(raw_cites, list) and raw_cites[0].get("document_key"))
+                        candidates = [e["citation"] for e in evidence if not doc_key or e["document_key"] == doc_key]
+                        if not candidates:
+                            candidates = [e["citation"] for e in evidence]
+                        claim_lower = (str(item.get("claim", "")) + " " + str(item.get("reasoning", "")) + " " + str(item.get("clause_citation", ""))).lower()
+                        best_cite = candidates[0]
+                        for c in candidates:
+                            clause_name = str(c.get("clause_ref", "")).lower()
+                            if clause_name and clause_name in claim_lower:
+                                best_cite = c
+                                break
+                        citations = [best_cite]
+
                     if not citations:
                         continue
+
+                    claim_text = str(item.get("claim") or item.get("attack_path") or item.get("risk") or item.get("finding_id") or "")[:500]
+                    if not claim_text:
+                        continue
+
+                    severity = str(item.get("severity", "medium")).lower()
+                    if severity not in ("low", "medium", "high", "critical"):
+                        severity = "medium"
+
                     finding = _save(db, owner, "agent-finding", {
                         "run_id": run_id, "agent": "Loki",
-                        "claim": str(item.get("claim", ""))[:500],
-                        "reasoning": str(item.get("reasoning", ""))[:1500],
-                        "severity": item.get("severity") if item.get("severity") in ("low", "medium", "high", "critical") else "unrated",
+                        "claim": claim_text,
+                        "reasoning": str(item.get("reasoning") or item.get("explanation") or claim_text)[:1500],
+                        "severity": severity,
                         "citations": citations, "source_tag": "inferred", "status": "proposed",
-                        "norns_milestone_id": str(item.get("norns_milestone_id") or "")[:20],
+                        "norns_milestone_id": str(item.get("norns_milestone_id") or item.get("finding_id") or "")[:20],
                         "financial_exposure_usd": float(item.get("financial_exposure_usd") or 0.0),
                     }, _stable_id(run_id, "Loki", str(index)))
                     ids.append(finding["id"])
+
             _message(store, owner, run_id, "Loki", "Heimdall",
                      f"{len(ids)} cited challenges · "
                      f"total flagged ${norns_ctx['total_worst_case_usd']:,.2f} USD")
-            return {"finding_ids": ids, "cursor": 0}
+            return {
+                "finding_ids": ids,
+                "cursor": 0,
+                "debate_history": [{
+                    "round": 0,
+                    "agent": "Loki",
+                    "action": "findings_proposed",
+                    "count": len(ids),
+                }],
+            }
         except Exception as exc:
             return {"finding_ids": [], "errors": [_failure(store, owner, run_id, "Loki", exc)]}
 

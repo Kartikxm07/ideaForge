@@ -81,6 +81,7 @@ export default function WorkflowPage() {
   const [decision, setDecision] = useState<"Approve"|"Reject"|"Escalate">("Approve");
   const [submitting, setSubmitting] = useState(false);
   const [activeWorkflowTab, setActiveWorkflowTab] = useState<"pipeline" | "trial" | "review">("trial");
+  const [reviewError, setReviewError] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -90,16 +91,23 @@ export default function WorkflowPage() {
       const [sess, latest] = await Promise.all([odinApi.session(), odinApi.latestAgentRun()]);
       setSession(sess); setRun(latest);
       if (latest?.id && latest.status !== "NOT_RUN") {
-        const token = typeof window !== "undefined" ? localStorage.getItem("odin_token") || "" : "";
-        const rd = await fetch(`/api/v1/workspace/agents/runs/${latest.id}/review-questions`,
-          { headers: { Authorization: `Bearer ${token}` } });
-        if (rd.ok) setReview(await rd.json());
+        setReview(await odinApi<ReviewData>(`/workspace/agents/runs/${encodeURIComponent(latest.id)}/review-questions`));
+      } else {
+        setReview(null);
       }
-    } catch { router.replace("/login"); }
+      setReviewError("");
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Could not load review questions";
+      if (/session expired|authentication required/i.test(message)) router.replace("/login");
+      else setReviewError(message);
+    }
     finally { setLoading(false); setRefreshing(false); }
   }, [router]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "review") setActiveWorkflowTab("review");
+    void fetchAll();
+  }, [fetchAll]);
   useEffect(() => {
     if (run?.status === "RUNNING") pollRef.current = setTimeout(() => fetchAll(true), 6000);
     return () => { if (pollRef.current) clearTimeout(pollRef.current); };
@@ -110,19 +118,18 @@ export default function WorkflowPage() {
   async function submitAnswer() {
     if (!modal || !run?.id || !answer.trim()) return;
     setSubmitting(true);
+    setReviewError("");
     try {
-      const token = localStorage.getItem("odin_token") || "";
-      const res = await fetch(`/api/v1/workspace/agents/runs/${run.id}/review-questions/${modal.id}/answer`, {
+      await odinApi(`/workspace/agents/runs/${encodeURIComponent(run.id)}/review-questions/${encodeURIComponent(modal.id)}/answer`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ answer: answer.trim(), decision }),
       });
-      if (res.ok) {
-        setToast(`Decision "${decision}" recorded`);
-        setModal(null); setAnswer("");
-        await fetchAll(true);
-        setTimeout(() => setToast(null), 4000);
-      }
+      setToast(`Decision "${decision}" recorded`);
+      setModal(null); setAnswer("");
+      await fetchAll(true);
+      setTimeout(() => setToast(null), 4000);
+    } catch (cause) {
+      setReviewError(cause instanceof Error ? cause.message : "Could not record this decision");
     } finally { setSubmitting(false); }
   }
 
@@ -209,6 +216,7 @@ export default function WorkflowPage() {
       </div>
 
       <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
+        {reviewError && <p role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">{reviewError}</p>}
         {activeWorkflowTab === "trial" && <TrialView />}
 
         {activeWorkflowTab === "pipeline" && (
@@ -319,7 +327,7 @@ export default function WorkflowPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               {review.questions.map(q => (
                 <button key={q.id}
-                  onClick={() => { setModal(q); setAnswer(q.answer ?? ""); setDecision((q.decision as any) ?? "Approve"); }}
+                  onClick={() => { setReviewError(""); setModal(q); setAnswer(q.answer ?? ""); setDecision(q.decision === "Reject" || q.decision === "Escalate" ? q.decision : "Approve"); }}
                   className={`rounded-2xl border p-4 text-left transition-all hover:scale-[1.01] ${
                     q.answered ? "border-emerald-500/25 bg-emerald-500/5" : "border-amber-500/35 bg-amber-500/5"}`}>
                   <div className="flex items-start gap-2">
@@ -350,15 +358,15 @@ export default function WorkflowPage() {
         {activeWorkflowTab === "review" && (!review || review.questions.length === 0) && (
           <section className="rounded-2xl border border-dashed border-white/10 p-12 text-center">
             <MessageSquare size={36} className="mx-auto text-slate-700" />
-            <p className="mt-4 font-semibold text-slate-400">No findings pending human review</p>
-            <p className="mt-1 text-sm text-slate-600">Review questions appear once Tyr flags a risk as needing interpretation.</p>
+            <p className="mt-4 font-semibold text-slate-400">No review questions for this run</p>
+            <p className="mt-1 text-sm text-slate-600">Run the agents on a contract. Tyr's review questions will appear here after rulings are produced.</p>
           </section>
         )}
       </div>
 
       {/* ── Review Modal ─────────────────────────────────────────────────── */}
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center" role="presentation">
           <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-2xl border border-white/10 bg-[#0f1e31] shadow-2xl">
             {/* head */}
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
@@ -366,7 +374,7 @@ export default function WorkflowPage() {
                 <UserCheck size={18} className="text-[#7c4db8]" />
                 <span className="font-bold">Human Review</span>
               </div>
-              <button onClick={() => setModal(null)} className="text-slate-500 hover:text-white text-2xl leading-none">×</button>
+              <button onClick={() => setModal(null)} aria-label="Close human review" className="text-slate-500 hover:text-white text-2xl leading-none">×</button>
             </div>
 
             {/* body */}
@@ -375,6 +383,7 @@ export default function WorkflowPage() {
               <div>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-[#7c4db8]">Finding</p>
                 <p className="text-sm font-semibold text-slate-100">{modal.finding_claim}</p>
+                <p className="mt-2 text-xs text-slate-400">Your decision is saved with this ruling. Approving a finding does not send a notice; dispatch has a separate administrator approval step.</p>
               </div>
               {/* rationale */}
               <div>
@@ -397,6 +406,7 @@ export default function WorkflowPage() {
                       <details key={i} className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs">
                         <summary className="cursor-pointer font-semibold text-[#3a75b0]">{c.document_key} · {c.clause_ref}</summary>
                         <blockquote className="mt-2 border-l-2 border-[#d4a017] pl-3 italic text-slate-400">"{c.quote}"</blockquote>
+                        <a href={`/api/v1/workspace/contracts/${encodeURIComponent(c.document_key)}/source`} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block font-semibold text-sky-300 underline">Open source document</a>
                       </details>
                     ))}
                   </div>
@@ -427,12 +437,13 @@ export default function WorkflowPage() {
               </div>
               {/* reasoning */}
               <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">Your Reasoning</label>
-                <textarea value={answer} onChange={e => setAnswer(e.target.value)} rows={4}
+                <label htmlFor="human-review-reasoning" className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">Your Reasoning</label>
+                <textarea id="human-review-reasoning" value={answer} onChange={e => setAnswer(e.target.value)} rows={4} maxLength={5000}
                   placeholder="Explain your decision or add context for the record…"
                   className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:border-[#7c4db8] focus:outline-none" />
               </div>
               {/* prior answer */}
+              {reviewError && <p role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">{reviewError}</p>}
               {modal.answered && modal.answer && (
                 <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3">
                   <p className="mb-1 text-xs font-semibold text-emerald-400">Previously answered:</p>

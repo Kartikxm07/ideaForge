@@ -157,10 +157,13 @@ class ChunkStorage:
 
     def _save_vectors(self):
         if self._vectors:
-            matrix = np.vstack(self._vectors).astype(np.float32)
-            np.save(str(self.vector_path), matrix)
-            with open(self.meta_path, "w", encoding="utf-8") as f:
-                json.dump(self._row_ids, f)
+            try:
+                matrix = np.vstack(self._vectors).astype(np.float32)
+                np.save(str(self.vector_path), matrix)
+                with open(str(self.meta_path), "w", encoding="utf-8") as f:
+                    json.dump(self._row_ids, f)
+            except Exception as e:
+                pass
 
     def store_chunk(
         self,
@@ -266,15 +269,25 @@ class ChunkStorage:
     ) -> int:
         """
         Store an extracted fact. If status is rejected, caller should not call this.
+        value is coerced to string (JSON-serialised for non-scalar types).
         """
+        # Coerce value to string so SQLite doesn't choke on dicts/lists
+        if isinstance(value, (dict, list)):
+            value_str = json.dumps(value)
+        elif value is None:
+            value_str = ""
+        else:
+            value_str = str(value)
+
         with self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
             INSERT INTO thor_facts (fact_type, document_id, chunk_id, quote, confidence, value, status, explanation)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (fact_type, document_id, chunk_id, quote, confidence, value or "", status, explanation or ""))
+            """, (fact_type, document_id, chunk_id, quote, confidence, value_str, status, explanation or ""))
             conn.commit()
             return cur.lastrowid
+
 
     def get_chunk(self, chunk_id: str) -> Optional[Dict[str, Any]]:
         with self._get_conn() as conn:

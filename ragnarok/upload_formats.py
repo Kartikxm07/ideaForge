@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from pypdf import PdfReader
 from pydantic import ValidationError
 
 from .operational_events import OperationalEvent
@@ -34,22 +33,24 @@ def extract_pdf(raw: bytes) -> tuple[str, int]:
     if not raw.startswith(b"%PDF-"):
         raise ValueError("This file is not a valid PDF")
     try:
-        reader = PdfReader(BytesIO(raw), strict=False)
-        if reader.is_encrypted and not reader.decrypt(""):
-            raise ValueError("Encrypted PDF: unlock it before uploading")
-        pages = len(reader.pages)
-        if pages < 1 or pages > 250:
-            raise ValueError("PDF must contain 1 to 250 pages")
-        parts = []
-        for number, page in enumerate(reader.pages, start=1):
-            text = page.extract_text() or ""
-            if not text.strip():
-                # OCR fallback — only attempted if pytesseract + pdf2image are installed
-                text = _ocr_page(raw, number)
-            if text.strip():
-                parts.append(f"# Page {number}\n{text.strip()}\n")
-            if sum(len(part.encode("utf-8")) for part in parts) > MAX_EXTRACTED_BYTES:
-                raise ValueError("Extracted PDF text exceeds the 2 MB source limit")
+        import fitz
+        from thor_agent.ocr_pdf import extract_page_text
+        with fitz.open(stream=raw, filetype="pdf") as reader:
+            if reader.needs_pass and not reader.authenticate(""):
+                raise ValueError("Encrypted PDF: unlock it before uploading")
+            pages = len(reader)
+            if pages < 1 or pages > 250:
+                raise ValueError("PDF must contain 1 to 250 pages")
+            parts = []
+            extracted_bytes = 0
+            for number, page in enumerate(reader, start=1):
+                text = extract_page_text(page)
+                if text.strip():
+                    part = f"# Page {number}\n{text.strip()}\n"
+                    parts.append(part)
+                    extracted_bytes += len(part.encode("utf-8"))
+                if extracted_bytes > MAX_EXTRACTED_BYTES:
+                    raise ValueError("Extracted PDF text exceeds the 2 MB source limit")
     except ValueError:
         raise
     except Exception as exc:
@@ -57,49 +58,9 @@ def extract_pdf(raw: bytes) -> tuple[str, int]:
     if not parts:
         raise ValueError(
             "No selectable text was found in this PDF and OCR is unavailable. "
-            "Paste the contract text instead, or install pytesseract + pdf2image for OCR support."
+            "Paste the contract text instead, or install the OCR extra: pip install -e .[ocr]."
         )
     return "\n".join(parts), pages
-
-
-def _ocr_page(raw: bytes, page_number: int) -> str:
-    """Best-effort OCR for one PDF page. Tries PyMuPDF + easyocr, then pdf2image/pytesseract."""
-    # --- 1. PyMuPDF pixmap render + easyocr (zero external binaries needed) ---
-    try:
-        import pymupdf as fitz  # type: ignore
-        from PIL import Image  # type: ignore
-        doc = fitz.open(stream=raw, filetype="pdf")
-        if 1 <= page_number <= len(doc):
-            page = doc.load_page(page_number - 1)
-            pix = page.get_pixmap(dpi=150)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            text = _easyocr_image(img)
-            if text.strip():
-                return text
-    except Exception:
-        pass
-
-    # --- 2. pdf2image + easyocr ---
-    try:
-        from pdf2image import convert_from_bytes  # type: ignore
-        images = convert_from_bytes(raw, first_page=page_number, last_page=page_number, dpi=200)
-        if images:
-            text = _easyocr_image(images[0])
-            if text.strip():
-                return text
-    except Exception:
-        pass
-
-    # --- 3. pytesseract fallback (requires Tesseract binary) ---
-    try:
-        import pytesseract  # type: ignore
-        from pdf2image import convert_from_bytes  # type: ignore
-        images = convert_from_bytes(raw, first_page=page_number, last_page=page_number, dpi=200)
-        if images:
-            return pytesseract.image_to_string(images[0])
-    except Exception:
-        pass
-    return ""
 
 
 IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "tiff", "tif", "bmp"}
@@ -107,12 +68,10 @@ IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "tiff", "tif", "bmp"}
 
 def _easyocr_image(pil_image) -> str:
     """Run easyocr on a PIL image. Returns joined text or empty string."""
-    import numpy as np  # type: ignore
-    import easyocr  # type: ignore
-    arr = np.array(pil_image)
-    reader = easyocr.Reader(["en"], gpu=False, verbose=False)
-    results = reader.readtext(arr, detail=0)
-    return "\n".join(results)
+    from thor_agent.ocr_pdf import ocr_image_bytes
+    buffer = BytesIO()
+    pil_image.convert("RGB").save(buffer, format="PNG")
+    return ocr_image_bytes(buffer.getvalue())
 
 
 def ocr_image(raw: bytes, filename: str = "image") -> str:

@@ -1,20 +1,26 @@
 """
-Thor Agent — Contract Term Extraction & Citation
-================================================
+Thor Agent — Contract Term Extraction & Bounding-Box Grounding
+==============================================================
 Thor is the first specialist in the ODIN pipeline.
-
-Responsibility: Extract exact contract terms and citations from each
-clause chunk. Thor never paraphrases; every claim is bound to a
-verbatim quote and a specific clause reference.
-
-The actual implementation lives in ragnarok/agents.py (thor_chunks)
-and ragnarok/agent_graph.py (thor stage). This file documents Thor's
-contract with the rest of the system and provides a convenient import.
+Extracts verbatim terms, maps PyMuPDF bounding rects, and rejects fabricated quotes.
 """
 from __future__ import annotations
-
 from ragnarok.agents import thor_chunks, THOR_CHUNK_CHARS
+from thor_agent.thor import ThorAgent, ThorExtractor, ClauseChunk, ClauseChunker, ExtractedFact
+from thor_agent.storage import ChunkStorage
+from thor_agent.ocr_pdf import PDFProcessor
 
-RESPONSIBILITY = "Extract exact contract terms and citations"
+RESPONSIBILITY = "Extract exact contract terms and citations anchored to bounding rects"
 
-__all__ = ["RESPONSIBILITY", "thor_chunks", "THOR_CHUNK_CHARS"]
+__all__ = [
+    "RESPONSIBILITY",
+    "ThorAgent",
+    "ThorExtractor",
+    "ClauseChunk",
+    "ClauseChunker",
+    "ExtractedFact",
+    "ChunkStorage",
+    "PDFProcessor",
+    "thor_chunks",
+    "THOR_CHUNK_CHARS",
+]

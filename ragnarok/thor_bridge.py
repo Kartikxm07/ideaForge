@@ -11,9 +11,10 @@ from thor_agent.blockchain import connect, receipt, save_new, snapshot, submit
 
 def run_dir(store_path: Path, run_id: str) -> Path:
     safe = re.sub(r"[^A-Za-z0-9_.-]", "-", run_id)[:100]
-    root = store_path.parent / "thor_runs" / safe
+    root = Path(store_path).parent / "thor_runs" / safe
     root.mkdir(parents=True, exist_ok=True)
     return root
+
 
 
 def evidence_db(store_path: Path, run_id: str) -> Path:

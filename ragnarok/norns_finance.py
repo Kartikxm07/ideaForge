@@ -1,4 +1,4 @@
-﻿"""
+"""
 ragnarok/norns_finance.py
 ─────────────────────────
 Norns Financial Exposure Engine.
@@ -89,6 +89,10 @@ def parse_ledger(csv_text: str) -> list[dict]:
         return [dict(r) for r in csv.DictReader(io.StringIO(csv_text.strip()))]
     except Exception:
         return []
+
+
+parse_relative_days = _parse_days
+TimelineMilestone = Milestone
 
 
 # ── Main calculation ───────────────────────────────────────────────────

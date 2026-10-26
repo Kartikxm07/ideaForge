@@ -24,6 +24,7 @@ import {
   Brain,
 } from "lucide-react";
 import { AgentMemoryMap } from "./AgentMemoryMap";
+import { ChunksExplorerView } from "./ChunksExplorerView";
 
 interface ContractItem {
   id: string;
@@ -50,7 +51,7 @@ interface AgentRun {
   findings?: { claim: string; explanation: string; severity: string; status: string }[];
 }
 
-export function OdinWebView() {
+export function OdinWebView({ onWorkspaceChange }: { onWorkspaceChange?: () => void }) {
   const [contracts, setContracts] = useState<ContractItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +63,8 @@ export function OdinWebView() {
   // Upload state
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [uploadName, setUploadName] = useState("");
+  const detailRequest = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Agent execution state
@@ -69,7 +72,7 @@ export function OdinWebView() {
   const [agentResult, setAgentResult] = useState<string | null>(null);
 
   // Active sub-view
-  const [activeTab, setActiveTab] = useState<"contracts" | "memory_map" | "council">("contracts");
+  const [activeTab, setActiveTab] = useState<"contracts" | "chunks" | "memory_map" | "council">("contracts");
 
   // Fetch contracts
   const fetchContracts = useCallback(async () => {
@@ -80,7 +83,7 @@ export function OdinWebView() {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const res = await fetch("/api/v1/workspace/contracts", { headers });
+      const res = await fetch("/api/v1/workspace/contracts?page_size=100", { headers });
       if (!res.ok) {
         throw new Error(`Failed to load contracts: HTTP ${res.status}`);
       }
@@ -99,7 +102,9 @@ export function OdinWebView() {
 
   // Load contract details when a contract is selected
   const viewContractDetail = async (key: string) => {
+    const request = ++detailRequest.current;
     try {
+      setSelectedDetail(null);
       setSelectedKey(key);
       setLoadingDetail(true);
       const token = typeof window !== "undefined" ? localStorage.getItem("odin_token") : null;
@@ -107,21 +112,26 @@ export function OdinWebView() {
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
       const res = await fetch(`/api/v1/workspace/contracts/${encodeURIComponent(key)}`, { headers });
-      if (res.ok) {
-        const detail = await res.json();
-        setSelectedDetail(detail);
-      }
-    } catch {
-      // ignore
+      if (!res.ok) throw new Error("Could not load this document. Please try again.");
+      const detail = await res.json();
+      if (request === detailRequest.current) setSelectedDetail(detail);
+    } catch (err) {
+      if (request === detailRequest.current) setError(err instanceof Error ? err.message : "Could not load document");
     } finally {
-      setLoadingDetail(false);
+      if (request === detailRequest.current) setLoadingDetail(false);
     }
   };
 
   // Upload handler
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || uploading) return;
+    if (file.size > 12_000_000) {
+      setError("Choose a file smaller than 12 MB.");
+      e.target.value = "";
+      return;
+    }
+    setUploadName(file.name);
 
     try {
       setUploading(true);
@@ -147,8 +157,9 @@ export function OdinWebView() {
       }
 
       const result = await res.json();
-      setUploadSuccess(`Successfully ingested "${result.title || file.name}" (${result.pages || 1} pages OCR-indexed).`);
+      setUploadSuccess(`Successfully ingested "${result.title || file.name}" ${result.pages ? ` · ${result.pages} page${result.pages === 1 ? "" : "s"}` : ""}.`);
       fetchContracts();
+      onWorkspaceChange?.();
     } catch (err: any) {
       setError(err?.message || "Upload failed");
     } finally {
@@ -168,7 +179,7 @@ export function OdinWebView() {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const res = await fetch("/api/v1/workspace/agents/runs", {
+      const res = await fetch("/api/v1/workspace/agents/run", {
         method: "POST",
         headers,
         body: JSON.stringify({ document_keys: keys }),
@@ -180,6 +191,7 @@ export function OdinWebView() {
       }
 
       const run = await res.json();
+      onWorkspaceChange?.();
       setAgentResult(`Agent run started successfully (Run ID: ${run.id || "Active"}). Agents Thor, Heimdall, Loki, Tyr, and Norns are analyzing.`);
     } catch (err: any) {
       setError(err?.message || "Failed to trigger agent run");
@@ -199,20 +211,20 @@ export function OdinWebView() {
       <div className="bg-white border border-[#E8E1D5] rounded-xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
             <span className="text-xs font-mono font-semibold uppercase tracking-wider text-amber-800">
-              Odin Web &middot; Live OCR &amp; Intelligence Workspace
+              ODIN / Document intelligence
             </span>
           </div>
           <h1 className="text-2xl font-bold text-[#17375B] mt-1">
-            Institutional Document Vault &amp; Agent Feeder
+            Your contracts, ready for answers.
           </h1>
           <p className="text-sm text-slate-600 mt-0.5">
-            Synchronized with local backend API at <code className="font-mono bg-amber-50 text-amber-900 px-1.5 py-0.5 rounded text-xs">http://127.0.0.1:8000</code>.
+            Upload a document, inspect its evidence, and send it to your agent council.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <input
             type="file"
             ref={fileInputRef}
@@ -223,14 +235,14 @@ export function OdinWebView() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#17375B] hover:bg-[#1f497a] text-white font-medium text-xs transition-colors shadow-xs"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#17375B] hover:bg-[#1f497a] text-white font-medium text-xs transition-colors shadow-xs disabled:opacity-60 disabled:cursor-wait focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17375B]"
           >
             {uploading ? (
               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Upload className="w-3.5 h-3.5" />
             )}
-            {uploading ? "Extracting OCR..." : "Upload Contract / PDF"}
+            {uploading ? "Reading document…" : "Upload document"}
           </button>
 
           <button
@@ -243,9 +255,21 @@ export function OdinWebView() {
         </div>
       </div>
 
+      <div className="rounded-xl border border-dashed border-[#C9D3DE] bg-[#F4F7FA] p-5 flex flex-col sm:flex-row sm:items-center gap-4" aria-live="polite" aria-busy={uploading}>
+        <div className="rounded-xl bg-white border border-[#DCE3EB] p-3 self-start text-[#17375B]">
+          <FileSearch className="w-6 h-6" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold text-[#17375B]">{uploading ? `Reading ${uploadName}` : "Digital documents and scanned pages, in one place."}</h2>
+          <p className="text-xs text-slate-600 mt-1 leading-relaxed">{uploading ? "Extracting text and checking scanned pages. Large scans and the first OCR run may take longer." : "Selectable text is read directly. Pages with little text get a local OCR pass when an OCR engine is installed."}</p>
+          <p className="text-xs text-slate-500 mt-2">PDF, TXT, PNG, JPG or WebP · Up to 12 MB</p>
+        </div>
+        {uploading && <RefreshCw className="w-5 h-5 animate-spin motion-reduce:animate-none text-[#17375B] shrink-0" aria-hidden="true" />}
+      </div>
+
       {/* Upload success feedback */}
       {uploadSuccess && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-xs flex items-center justify-between">
+        <div role="status" className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{uploadSuccess}</span>
@@ -258,7 +282,7 @@ export function OdinWebView() {
 
       {/* Error alert */}
       {error && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-xs flex items-center justify-between">
+        <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>{error}</span>
@@ -279,28 +303,28 @@ export function OdinWebView() {
 
         <div className="bg-white border border-[#E8E1D5] rounded-xl p-4 shadow-xs">
           <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">OCR Engine</span>
-          <div className="text-2xl font-bold text-emerald-700 mt-1">PyMuPDF + EasyOCR</div>
-          <span className="text-[11px] text-emerald-600 font-mono">Zero-loss page extraction</span>
+          <div className="text-2xl font-bold text-emerald-700 mt-1">Digital + OCR</div>
+          <span className="text-[11px] text-emerald-600 font-mono">Automatic scanned-page fallback</span>
         </div>
 
         <div className="bg-white border border-[#E8E1D5] rounded-xl p-4 shadow-xs">
           <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Thor Sub-Agent</span>
-          <div className="text-2xl font-bold text-amber-700 mt-1">Active / Connected</div>
-          <span className="text-[11px] text-amber-700 font-mono">SSE Stream on :8000/thor</span>
+          <div className="text-lg font-bold text-amber-700 mt-1">Evidence extraction</div>
+          <span className="text-[11px] text-amber-700 font-mono">Clauses and supporting quotes</span>
         </div>
 
         <div className="bg-white border border-[#E8E1D5] rounded-xl p-4 shadow-xs">
           <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pipeline Readiness</span>
-          <div className="text-2xl font-bold text-slate-800 mt-1">100% Ready</div>
+          <div className="text-lg font-bold text-slate-800 mt-1">{contracts.length ? "Documents available" : "Add a document"}</div>
           <span className="text-[11px] text-slate-400">Thor &middot; Heimdall &middot; Loki &middot; Tyr</span>
         </div>
       </div>
 
       {/* Tab Nav */}
-      <div className="flex items-center gap-2 border-b border-[#E8E1D5] pb-2">
+      <div className="flex items-center gap-2 border-b border-[#E8E1D5] pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab("contracts")}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
             activeTab === "contracts"
               ? "bg-[#17375B] text-white"
               : "text-slate-600 hover:text-slate-900 hover:bg-white"
@@ -311,8 +335,20 @@ export function OdinWebView() {
         </button>
 
         <button
+          onClick={() => setActiveTab("chunks")}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
+            activeTab === "chunks"
+              ? "bg-[#17375B] text-white"
+              : "text-slate-600 hover:text-slate-900 hover:bg-white"
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5 text-blue-400" />
+          Evidence explorer
+        </button>
+
+        <button
           onClick={() => setActiveTab("memory_map")}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
             activeTab === "memory_map"
               ? "bg-[#17375B] text-white"
               : "text-slate-600 hover:text-slate-900 hover:bg-white"
@@ -324,7 +360,7 @@ export function OdinWebView() {
 
         <button
           onClick={() => setActiveTab("council")}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
             activeTab === "council"
               ? "bg-[#17375B] text-white"
               : "text-slate-600 hover:text-slate-900 hover:bg-white"
@@ -345,6 +381,7 @@ export function OdinWebView() {
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
+                  aria-label="Search contracts"
                   placeholder="Filter contracts by title or ID..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -553,7 +590,10 @@ export function OdinWebView() {
         </div>
       )}
 
-      {/* TAB 3: SHARED MEMORY MAP */}
+      {/* TAB 3: VECTOR CHUNKS EXPLORER */}
+      {activeTab === "chunks" && <ChunksExplorerView />}
+
+      {/* TAB 4: SHARED MEMORY MAP */}
       {activeTab === "memory_map" && <AgentMemoryMap />}
     </div>
   );

@@ -51,14 +51,21 @@ class ClaudeProvider:
             try:
                 response = httpx.post(
                     "https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {self.settings.openrouter_api_key}"},
+                    headers={
+                        "Authorization": f"Bearer {self.settings.openrouter_api_key}",
+                        "HTTP-Referer": "https://localhost",
+                        "X-Title": "Odin Contract Intelligence",
+                    },
                     json={"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": 0},
                     timeout=90,
                 )
                 response.raise_for_status()
                 return response.json()["choices"][0]["message"]["content"]
+            except httpx.HTTPStatusError as exc:
+                err_detail = exc.response.text[:300]
+                raise ModelUnavailable(f"OpenRouter HTTP {exc.response.status_code}: {err_detail}") from exc
             except (httpx.HTTPError, KeyError, IndexError, TypeError) as exc:
-                raise ModelUnavailable(f"OpenRouter request failed: {type(exc).__name__}") from exc
+                raise ModelUnavailable(f"OpenRouter request failed: {exc}") from exc
         if not self._client:
             raise ModelUnavailable("No LLM API key configured")
         try:

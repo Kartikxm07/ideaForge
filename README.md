@@ -60,7 +60,7 @@ The graph uses a separate SQLite checkpoint file beside the app database. If the
 
 ### Browser source uploads
 
-From **Organization & uploads**, upload `.txt` contracts, text-based `.pdf` contracts, or `.jsonl` files. JSONL event records (`event_id`, `timestamp`, `channel`, `from`, `to`, `subject`, `body`) enter the event ledger; JSONL records with `text` or `content` become source clauses. Malformed event lines are quarantined and counted. You can also paste contract text with a document name. PDF source files are retained and can be opened from citations. Scanned PDFs without selectable text need OCR or pasted text.
+From **Organization & uploads**, upload `.txt` contracts, text-based `.pdf` contracts, or `.jsonl` files. JSONL event records (`event_id`, `timestamp`, `channel`, `from`, `to`, `subject`, `body`) enter the event ledger; JSONL records with `text` or `content` become source clauses. Malformed event lines are quarantined and counted. You can also paste contract text with a document name. PDF source files are retained and can be opened from citations. PDF pages with fewer than 50 selectable characters automatically use local OCR at 300 DPI. Install the optional engine with `python -m pip install -e ".[ocr]"`. EasyOCR downloads English model weights on first use; subsequent recognition runs locally on CPU. PyMuPDF can also fall back to a locally installed Tesseract with English language data. If OCR is unavailable, existing selectable text is preserved; image-only uploads need OCR or pasted text.
 
 ---
 

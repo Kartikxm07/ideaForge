@@ -321,3 +321,20 @@ body {
 .font-orbitron  { font-family: 'DM Sans', system-ui, sans-serif; font-weight: 700; }
 .font-rajdhani  { font-family: 'DM Sans', system-ui, sans-serif; font-weight: 600; }
 .font-jetbrains { font-family: 'JetBrains Mono', monospace; }
+
+/* Unified intelligence workspace */
+.odin-workspace { --workspace-green: #284e3c; }
+.odin-workspace .workspace-panel { padding: 24px; background: #fff; border: 1px solid #e0e5da; border-radius: 16px; box-shadow: 0 2px 3px #203c3003; }
+.odin-workspace .workspace-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .16em; color: #71856c; }
+.odin-workspace .workspace-tag { border: 1px solid #dfe6d8; border-radius: 30px; padding: 6px 10px; font-size: 11px; color: #57704f; background: #f5f8ef; }
+.odin-workspace .workspace-hero { display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 36px; border-radius: 18px; color: white; background: radial-gradient(ellipse at right top, #526b42 0, transparent 60%), #253f31; }
+.odin-workspace .workspace-input { width: 100%; border: 1px solid #dce3d6; padding: 12px; border-radius: 10px; font-size: 13px; background: #fafbf8; }
+.odin-workspace button { transition: background-color 160ms ease, border-color 160ms ease; }
+.odin-workspace button:not(:disabled) { cursor: pointer; }
+.odin-workspace button:disabled { cursor: not-allowed; }
+.odin-workspace :is(button, a, input, textarea, select):focus-visible { outline: 2px solid #608953; outline-offset: 3px; }
+.odin-workspace nav button[aria-current="page"] { background: #284e3c; }
+.odin-workspace > header { background: #fbfcf8; border-color: #e0e5da; }
+.odin-workspace > div > aside { background: #fbfcf8; border-color: #e0e5da; }
+@media (max-width: 640px) { .odin-workspace .workspace-panel { padding: 18px; } .odin-workspace .workspace-hero { padding: 24px; } }
+@media (prefers-reduced-motion: reduce) { .odin-workspace *, .odin-workspace *::before, .odin-workspace *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

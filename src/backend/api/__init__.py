@@ -1,7 +1,13 @@
 """
-API endpoints bridge for RAGNAROK / ODIN.
+API endpoints for RAGNAROK / ODIN.
 """
-from ragnarok.workspace_api import router as workspace_router
-from ragnarok.api import app as fastapi_app
+from ragnarok.api import create_app
+from ragnarok.config import Settings
+from ragnarok.store import Store
 
-__all__ = ["workspace_router", "fastapi_app"]
+def get_app():
+    return create_app()
+
+app = create_app()
+
+__all__ = ["create_app", "get_app", "app"]

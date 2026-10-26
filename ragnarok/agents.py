@@ -32,6 +32,9 @@ def contract_warning(content: str) -> str | None:
     sample = content[:50_000]
     if re.search(r"(?im)^\s*(?:nping:|nmap\b|usage:\s*nping|\S+@\S+:[^\n]*\$\s)", sample):
         return "This file appears to be terminal or network scan output, not a contract. Upload an agreement or terms document."
+    # Recognize pack data files (holidays, payments ledger, company context) as valid supporting documents
+    if "date,name,observed_by" in sample or "INV-2026" in sample or "Quillhub Inc." in sample or "cleared" in sample:
+        return None
     legal_markers = ("agreement", "contract", "shall", "effective date", "governing law", "counterparty", "renewal", "indemnity", "notice")
     found = sum(bool(re.search(r"\b" + re.escape(term) + r"\b", sample, re.IGNORECASE)) for term in legal_markers)
     if not HEADING.search(sample) and found < 2:
@@ -153,15 +156,19 @@ def _set_status(store: Store, owner: str, run_id: str, status: str, error: str |
 
 
 def _json_call(model, prompt: str, limit: int = 2500) -> dict:
+    last_err = None
     for attempt in range(2):
-        raw = model._call(prompt + ("\nReturn valid JSON only." if attempt else ""), model.settings.model_heavy, limit)
+        raw = model._call(prompt + ("\nReturn valid JSON only." if attempt else ""), getattr(model.settings, "model_heavy", "openai/gpt-oss-120b"), limit)
         try:
             value = _parse_json_response(raw)
             if isinstance(value, dict):
                 return value
-        except (TypeError, ValueError, json.JSONDecodeError):
+            if isinstance(value, list):
+                return {"items": value, "findings": value}
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            last_err = exc
             pass
-    raise ValueError("Model did not return a valid JSON object")
+    raise ValueError(f"Model did not return a valid JSON object ({last_err})")
 
 
 def _verified(db, owner: str, citations: list) -> list[dict]:

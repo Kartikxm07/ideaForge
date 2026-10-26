@@ -12,6 +12,8 @@ PDF processing and highlight engine for Thor Sub-Agent:
 from __future__ import annotations
 import base64
 import io
+import logging
+from threading import Lock
 import os
 import re
 from pathlib import Path
@@ -20,9 +22,26 @@ from typing import Any, Dict, List, Optional, Tuple
 try:
     import fitz  # PyMuPDF
     HAVE_PYMUPDF = True
+    try:
+        fitz.TOOLS.mupdf_display_errors(False)
+    except Exception:
+        pass
 except ImportError:
     fitz = None
     HAVE_PYMUPDF = False
+
+
+def open_pdf(pdf_path: Path):
+    """Robust PDF opener with automatic xref repair fallback."""
+    if not HAVE_PYMUPDF or not pdf_path.exists():
+        return None
+    try:
+        return fitz.open(str(pdf_path))
+    except Exception:
+        try:
+            return fitz.open("pdf", pdf_path.read_bytes())
+        except Exception:
+            return None
 
 
 class PDFProcessor:
@@ -70,7 +89,9 @@ class PDFProcessor:
         if not HAVE_PYMUPDF or not pdf_path.exists():
             return {"available": False, "page_count": 0, "pages": []}
 
-        doc = fitz.open(str(pdf_path))
+        doc = open_pdf(pdf_path)
+        if not doc:
+            return {"available": False, "page_count": 0, "pages": []}
         pages = []
         for i, page in enumerate(doc):
             text = page.get_text() or ""
@@ -104,7 +125,9 @@ class PDFProcessor:
             return (1, [])
 
         clean_quote = " ".join(quote.strip().split())
-        doc = fitz.open(str(pdf_path))
+        doc = open_pdf(pdf_path)
+        if not doc:
+            return (1, [])
 
         # 1. Try search by entire quote or first 80 chars
         search_terms = []
@@ -168,7 +191,9 @@ class PDFProcessor:
         if not HAVE_PYMUPDF or not pdf_path.exists():
             return (b"", [])
 
-        doc = fitz.open(str(pdf_path))
+        doc = open_pdf(pdf_path)
+        if not doc:
+            return (b"", [])
         page_idx = max(0, min(page_num - 1, len(doc) - 1))
         page = doc[page_idx]
 
@@ -247,28 +272,80 @@ class PDFProcessor:
         }
 
     def ocr_page_if_needed(self, pdf_path: Path, page_num: int = 1) -> str:
-        """
-        OCR fallback: extracts text from text layer or falls back to OCR if empty.
-        """
-        if not HAVE_PYMUPDF or not pdf_path.exists():
+        """Read one page using the same digital-first extraction as full PDFs."""
+        doc = open_pdf(Path(pdf_path))
+        if doc is None:
             return ""
+        with doc:
+            if not len(doc):
+                return ""
+            return extract_page_text(doc[max(0, min(page_num - 1, len(doc) - 1))])
 
-        doc = fitz.open(str(pdf_path))
-        page_idx = max(0, min(page_num - 1, len(doc) - 1))
-        page = doc[page_idx]
-        text = page.get_text() or ""
-        
-        # If page has text, return it
-        if text.strip():
-            doc.close()
-            return text
 
-        # Attempt OCR via PyMuPDF TextPage OCR if available
-        try:
-            tp = page.get_textpage_ocr(language="eng", dpi=150)
-            ocr_text = tp.extractText() or ""
-            doc.close()
-            return ocr_text
-        except Exception:
-            doc.close()
-            return "[OCR Fallback: Scanned document page - text recognized as raster image]"
+logger = logging.getLogger(__name__)
+_easyocr_reader = None
+_reader_lock = Lock()
+
+
+def get_easyocr_reader():
+    """Load the English model only when needed; share it across requests."""
+    global _easyocr_reader
+    with _reader_lock:
+        if _easyocr_reader is None:
+            try:
+                import easyocr
+                _easyocr_reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+            except Exception:
+                logger.warning("EasyOCR unavailable; trying Tesseract", exc_info=True)
+                return None
+    return _easyocr_reader
+
+
+def ocr_image_bytes(img_bytes: bytes) -> str:
+    """Recognize an image locally, returning empty text if OCR is unavailable."""
+    try:
+        from PIL import Image
+        import numpy as np
+        reader = get_easyocr_reader()
+        if reader is not None:
+            with Image.open(io.BytesIO(img_bytes)) as img:
+                image = np.array(img.convert("RGB"))
+            with _reader_lock:
+                return "\n".join(reader.readtext(image, detail=0))
+    except Exception:
+        logger.warning("EasyOCR image recognition failed", exc_info=True)
+    return ""
+
+
+def extract_page_text(page) -> str:
+    """Digital text first; sparse pages use 300 DPI OCR without losing text."""
+    text = (page.get_text("text") or "").strip()
+    if len(text) >= 50:
+        return text
+    logger.info("Page %s: sparse text; attempting local OCR", page.number + 1)
+    try:
+        pix = page.get_pixmap(dpi=300, colorspace=fitz.csRGB, alpha=False)
+        recognized = ocr_image_bytes(pix.tobytes("png")).strip()
+        if recognized:
+            return recognized if not text or text in recognized else text + "\n" + recognized
+    except Exception:
+        logger.warning("Page rendering/OCR failed", exc_info=True)
+    try:
+        recognized = page.get_textpage_ocr(language="eng", dpi=300).extractText().strip()
+        if recognized:
+            return recognized if not text or text in recognized else text + "\n" + recognized
+    except Exception:
+        logger.warning("Tesseract unavailable for page %s", page.number + 1)
+    return text
+
+
+def extract_text_from_pdf(pdf_path: Path | str) -> str:
+    """Extract every PDF page, automatically recognizing sparse/scanned pages."""
+    doc = open_pdf(Path(pdf_path))
+    if doc is None:
+        return ""
+    with doc:
+        return "\n\n".join(
+            f"--- Page {number + 1} ---\n{extract_page_text(page)}"
+            for number, page in enumerate(doc)
+        )

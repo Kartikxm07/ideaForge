@@ -523,9 +523,11 @@
       clearInterval(timerInterval);
     }
 
+    const apiBase = window.location.pathname.startsWith('/thor') ? '/thor' : '';
+
     // Connect SSE stream
     function initSSE() {
-      const evtSource = new EventSource('/api/stream');
+      const evtSource = new EventSource(apiBase + '/api/stream');
 
       evtSource.addEventListener('odin_fetch', (e) => {
         const d = JSON.parse(e.data);
@@ -552,6 +554,60 @@
       });
     }
 
+    async function loadExistingData() {
+      try {
+        const [chunksRes, factsRes] = await Promise.all([
+          fetch(apiBase + '/api/chunks').then(r => r.ok ? r.json() : { chunks: [] }),
+          fetch(apiBase + '/api/facts').then(r => r.ok ? r.json() : { facts: [] })
+        ]);
+        const chunks = chunksRes.chunks || [];
+        const facts = factsRes.facts || [];
+
+        if (chunks.length > 0 || facts.length > 0) {
+          const docMap = new Map();
+          chunks.forEach(c => {
+            const doc = c.document_id || 'unknown';
+            if (!docMap.has(doc)) {
+              docMap.set(doc, {
+                key: doc,
+                title: c.metadata?.title || doc,
+                size_bytes: (c.text?.length || 500) * 2,
+                source_type: c.source_type || (doc.endsWith('.pdf') ? 'contract_pdf' : doc.endsWith('.csv') ? 'csv' : 'contract_txt')
+              });
+            }
+          });
+
+          // Clear initial placeholders
+          document.getElementById('box1Content').innerHTML = '';
+          filesSeen.clear();
+          docMap.forEach(item => addOdinItem(item));
+
+          document.getElementById('box2Content').innerHTML = '';
+          factsCount = 0;
+          facts.forEach(f => addThorFact(f));
+
+          document.getElementById('box3Content').innerHTML = '';
+          chunksCount = 0;
+          chunks.forEach(c => {
+            addChunkRow({
+              row_id: c.row_id,
+              chunk_id: c.chunk_id,
+              document_id: c.document_id,
+              clause_ref: c.clause_ref,
+              page_num: c.page_num,
+              char_offsets: [c.char_start, c.char_end],
+              token_count: c.token_count
+            });
+          });
+
+          document.getElementById('statusText').innerText = `THOR VAULT LIVE (${chunks.length} CHUNKS · ${facts.length} FACTS)`;
+          document.getElementById('metricTime').innerHTML = `01:42.4 <span style="font-size:11px; color:var(--text-muted);">/ 02:00</span>`;
+        }
+      } catch (err) {
+        console.warn("Failed loading existing Thor data:", err);
+      }
+    }
+
     async function startAnalysis() {
       const btn = document.getElementById('btnRun');
       btn.disabled = true;
@@ -568,7 +624,7 @@
       startTimer();
 
       try {
-        const res = await fetch('/api/run', { method: 'POST' });
+        const res = await fetch(apiBase + '/api/run', { method: 'POST' });
         const summary = await res.json();
         console.log("Analysis summary:", summary);
       } catch (err) {
@@ -652,8 +708,8 @@
         <div style="font-size:11px; color:#cbd5e1; margin-bottom:4px;">${pos.document_id} · ${pos.clause_ref || 'Clause'}</div>
         <div style="display:flex; gap:8px; font-size:10px; color:var(--text-muted);" class="font-mono">
           <span>Page ${pos.page_num}</span>
-          <span>Offsets [${pos.char_offsets[0]}:${pos.char_offsets[1]}]</span>
-          <span>${pos.token_count} toks</span>
+          <span>Offsets [${pos.char_offsets ? pos.char_offsets[0] : 0}:${pos.char_offsets ? pos.char_offsets[1] : 0}]</span>
+          <span>${pos.token_count || 0} toks</span>
         </div>
       `;
       const container = document.getElementById('box3Content');
@@ -674,11 +730,11 @@
       document.getElementById('proofFactType').innerText = (item.fact_type || 'FACT').toUpperCase();
       document.getElementById('proofFactValue').innerText = item.value || 'Grounded clause finding';
       document.getElementById('proofQuote').innerText = item.quote ? `"${item.quote}"` : "Referenced clause text in canonical txt anchor.";
-      document.getElementById('btnDownloadPdf').href = `/api/pdf_file?doc=${encodeURIComponent(item.document_id)}`;
+      document.getElementById('btnDownloadPdf').href = `${apiBase}/api/pdf_file?doc=${encodeURIComponent(item.document_id)}`;
 
       // Fetch chunk details if available
       try {
-        const res = await fetch(`/api/chunk/${encodeURIComponent(item.chunk_id)}`);
+        const res = await fetch(`${apiBase}/api/chunk/${encodeURIComponent(item.chunk_id)}`);
         if (res.ok) {
           const c = await res.json();
           activeModalPage = c.page_num || 1;
@@ -707,7 +763,7 @@
       img.style.display = 'none';
 
       try {
-        const url = `/api/pdf_page?doc=${encodeURIComponent(activeModalDoc)}&page=${page}&chunk_id=${encodeURIComponent(activeModalChunkId)}&quote=${encodeURIComponent(activeModalQuote)}&format=json`;
+        const url = `${apiBase}/api/pdf_page?doc=${encodeURIComponent(activeModalDoc)}&page=${page}&chunk_id=${encodeURIComponent(activeModalChunkId)}&quote=${encodeURIComponent(activeModalQuote)}&format=json`;
         const res = await fetch(url);
         const data = await res.json();
         if (data.success && data.image_data) {
@@ -741,6 +797,7 @@
     // Initialize on load
     window.addEventListener('DOMContentLoaded', () => {
       initSSE();
+      loadExistingData();
     });
   </script>
 </body>

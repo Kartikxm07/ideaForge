@@ -41,7 +41,7 @@ import {
 } from "@/lib/odin-api";
 import { RagVaultPanel } from "@/components/views/RagVaultPanel";
 
-export function TrialView() {
+export function TrialView({ onAskQuestion }: { onAskQuestion?: () => void }) {
   const [trial, setTrial] = useState<TrialResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -859,6 +859,10 @@ export function TrialView() {
               </button>
             </div>
 
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-900 p-4">
+              <div><p className="text-sm font-semibold text-white">Go deeper into the evidence</p><p className="mt-1 text-xs text-slate-400">Ask a follow-up against your source contracts and keep a cited question history.</p></div>
+              <button onClick={() => onAskQuestion ? onAskQuestion() : window.location.assign('/war-room?view=ask')} className="rounded-lg bg-amber-300 px-4 py-2 text-xs font-semibold text-slate-950">Ask a follow-up →</button>
+            </div>
             {/* FR8.1: Executive Summary */}
             <div className="p-5 rounded-xl border border-amber-500/30 bg-amber-950/10 space-y-2">
               <span className="font-orbitron font-bold text-xs text-amber-300 uppercase tracking-wider block">
@@ -991,6 +995,15 @@ export function TrialView() {
         <RagVaultPanel trialData={trial} />
       )}
 
+      {/* ── Live Agentic Communication Panel ─────────────────────────────── */}
+      <LiveAgentCommsPanel />
+
+      {/* ── RAG Intelligence Q&A Panel ───────────────────────────────────── */}
+      <RagAskPanel />
+
+      {/* ── Human Input → LLM Synthesis Panel ───────────────────────────── */}
+      {trial && <HumanSynthesisPanel trial={trial} />}
+
       {/* ── FR7.4: Evidence Modal (Full Document View with Quote Highlight) ── */}
       {evidenceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
@@ -1051,6 +1064,512 @@ export function TrialView() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Live Agentic Communication Panel — SSE-based real-time updates
+═══════════════════════════════════════════════════════════════ */
+function LiveAgentCommsPanel() {
+  const [events, setEvents] = React.useState<Array<{ time: string; msg: string; type: string }>>([]);
+  const [connected, setConnected] = React.useState(false);
+  const [agentStatus, setAgentStatus] = React.useState<Record<string, string>>({});
+  const esRef = React.useRef<EventSource | null>(null);
+
+  React.useEffect(() => {
+    const token = document.cookie.match(/ragnarok_token=([^;]+)/)?.[1]
+      || localStorage.getItem("ragnarok_token")
+      || "";
+    try {
+      const es = new EventSource(`/api/v1/workspace/stream?token=${encodeURIComponent(token)}`);
+      esRef.current = es;
+      es.addEventListener("update", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          const agentRuns = data.agent_runs || [];
+          const newStatus: Record<string, string> = {};
+          agentRuns.forEach(([id, status]: [string, string]) => { newStatus[id.slice(0, 8)] = status; });
+          setAgentStatus(prev => ({ ...prev, ...newStatus }));
+          setEvents(prev => [{
+            time: new Date().toLocaleTimeString(),
+            msg: `Agent update: ${agentRuns.length} active runs, ${data.messages?.[0] || 0} messages`,
+            type: "update"
+          }, ...prev.slice(0, 19)]);
+          setConnected(true);
+        } catch {}
+      });
+      es.onerror = () => { setConnected(false); };
+      es.onopen = () => { setConnected(true); };
+      return () => { es.close(); };
+    } catch { setConnected(false); }
+  }, []);
+
+  const agentNames = ["Odin", "Thor", "Loki", "Heimdall", "Tyr", "Norns"];
+
+  return (
+    <div className="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-950/80 overflow-hidden">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-5 border-b border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Radio className="w-5 h-5 text-cyan-400" />
+            {connected && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
+          </div>
+          <div>
+            <h3 className="font-orbitron font-bold text-sm text-white">LIVE AGENTIC COMMUNICATION STREAM</h3>
+            <p className="text-[11px] text-slate-400 font-mono">Real-time SSE from RAGNAROK multi-agent orchestrator</p>
+          </div>
+        </div>
+        <span className={`px-3 py-1 rounded-full text-xs font-bold font-mono border ${connected ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-300" : "border-slate-700 bg-slate-900 text-slate-500"}`}>
+          {connected ? "● LIVE CONNECTED" : "○ CONNECTING..."}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
+        {/* Agent Status Grid */}
+        <div className="p-4 space-y-2">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-3">Agent Status</p>
+          {agentNames.map((name) => {
+            const key = Object.keys(agentStatus).find(k => k.toLowerCase().includes(name.toLowerCase()));
+            const status = key ? agentStatus[key] : "READY";
+            return (
+              <div key={name} className="flex items-center justify-between text-xs font-mono">
+                <span className="text-slate-300 font-bold">{name}</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                  status === "COMPLETE" ? "bg-emerald-950 text-emerald-300 border-emerald-700"
+                  : status === "RUNNING" ? "bg-cyan-950 text-cyan-300 border-cyan-700 animate-pulse"
+                  : "bg-slate-900 text-slate-500 border-slate-800"
+                }`}>{status}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Live Event Log */}
+        <div className="lg:col-span-2 p-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-3">Event Stream</p>
+          {events.length === 0 ? (
+            <div className="text-center py-6 text-xs text-slate-500 font-mono">
+              <span className="animate-pulse">Waiting for agent events...</span>
+              <p className="mt-1 text-[10px]">Run a trial or agent graph to see live updates here</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {events.map((ev, i) => (
+                <div key={i} className="flex gap-2 text-[11px] font-mono">
+                  <span className="text-slate-600 shrink-0">{ev.time}</span>
+                  <span className={ev.type === "update" ? "text-cyan-300" : "text-slate-400"}>{ev.msg}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RAG Intelligence Q&A Panel — chunk proofs + email reply
+═══════════════════════════════════════════════════════════════ */
+function RagAskPanel() {
+  const [question, setQuestion] = React.useState("");
+  const [sendEmail, setSendEmail] = React.useState(false);
+  const [recipient, setRecipient] = React.useState("atharvmanojshukla7@gmail.com");
+  const [loading, setLoading] = React.useState(false);
+  const [result, setResult] = React.useState<any>(null);
+  const [history, setHistory] = React.useState<any[]>([]);
+  const [showHistory, setShowHistory] = React.useState(false);
+  const [expandedProof, setExpandedProof] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    fetch("/api/v1/workspace/trial/rag-history", { credentials: "same-origin" })
+      .then(r => r.ok ? r.json() : [])
+      .then(setHistory)
+      .catch(() => {});
+  }, [result]);
+
+  async function handleAsk() {
+    if (!question.trim()) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/v1/workspace/trial/rag-ask", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, send_email: sendEmail, recipient }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setResult(await res.json());
+    } catch (err: any) {
+      setResult({ error: err.message || "Request failed" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mt-6 rounded-2xl border border-amber-500/30 bg-slate-950/80 overflow-hidden">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-5 border-b border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-slate-950" />
+          </div>
+          <div>
+            <h3 className="font-orbitron font-bold text-sm text-white">ODIN RAG INTELLIGENCE — AGENTIC Q&A</h3>
+            <p className="text-[11px] text-slate-400 font-mono">Hybrid BM25 + dense retrieval · LLM-grounded answer · Resend email proof</p>
+          </div>
+        </div>
+        <button
+          onClick={() => setShowHistory(!showHistory)}
+          className="text-[11px] font-mono text-slate-400 hover:text-white border border-slate-700 px-2.5 py-1 rounded-lg transition-all"
+        >
+          History ({history.length})
+        </button>
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* Q&A Input */}
+        <div className="space-y-3">
+          <textarea
+            value={question}
+            onChange={e => setQuestion(e.target.value)}
+            rows={2}
+            placeholder="Ask ODIN a question grounded in the contract database... (e.g. What SLA penalties apply to StratoNode outages?)"
+            className="w-full rounded-xl border border-slate-700 bg-slate-900/90 p-3 font-mono text-xs text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none transition-colors resize-none"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={handleAsk}
+              disabled={loading || !question.trim()}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold font-rajdhani text-sm uppercase tracking-wider shadow-lg shadow-amber-500/20 disabled:opacity-50 transition-all"
+            >
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              {loading ? "Retrieving & Synthesizing..." : "Ask ODIN"}
+            </button>
+
+            <label className="flex items-center gap-2 text-xs font-mono text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={sendEmail}
+                onChange={e => setSendEmail(e.target.checked)}
+                className="rounded border-slate-600 bg-slate-800 accent-amber-500"
+              />
+              Send email proof
+            </label>
+
+            {sendEmail && (
+              <input
+                type="email"
+                value={recipient}
+                onChange={e => setRecipient(e.target.value)}
+                placeholder="recipient@email.com"
+                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-mono text-white focus:border-amber-500 focus:outline-none flex-1 min-w-[220px]"
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Result Display */}
+        {result && (
+          <div className="space-y-4">
+            {result.error ? (
+              <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-4 text-xs font-mono text-rose-300">
+                Error: {result.error}
+              </div>
+            ) : (
+              <>
+                {/* Answer Box */}
+                <div className="rounded-xl border border-amber-500/30 bg-amber-950/10 p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">ODIN RAG ANSWER</span>
+                    <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
+                      <span>{result.chunks_retrieved} chunks retrieved</span>
+                      {result.email_sent && (
+                        <span className="text-emerald-400 font-bold">✓ Email sent to {result.email_recipient}</span>
+                      )}
+                      {result.email_error && (
+                        <span className="text-rose-400">Email: {result.email_error}</span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-sm text-white leading-relaxed font-mono whitespace-pre-wrap">{result.answer}</p>
+                </div>
+
+                {/* Eval Metrics */}
+                {result.eval && (
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { label: "Faithfulness", val: result.eval.faithfulness, color: "text-emerald-300" },
+                      { label: "Context Precision", val: result.eval.context_precision, color: "text-cyan-300" },
+                      { label: "Answer Relevance", val: result.eval.answer_relevance, color: "text-amber-300" },
+                    ].map(m => (
+                      <div key={m.label} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-center">
+                        <p className="text-[10px] text-slate-500 uppercase font-mono">{m.label}</p>
+                        <p className={`text-lg font-bold font-jetbrains mt-1 ${m.color}`}>
+                          {typeof m.val === "number" ? (m.val * 100).toFixed(0) + "%" : "—"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Chunk Proofs */}
+                {result.proofs?.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Retrieved Chunk Proofs ({result.proofs.length})
+                    </p>
+                    <div className="space-y-2 max-h-72 overflow-y-auto">
+                      {result.proofs.map((p: any, i: number) => (
+                        <div
+                          key={i}
+                          onClick={() => setExpandedProof(expandedProof === i ? null : i)}
+                          className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 cursor-pointer hover:border-amber-500/40 transition-all"
+                        >
+                          <div className="flex items-center justify-between text-[11px] font-mono">
+                            <span className="text-cyan-400 font-bold">[{i+1}] {p.document_key}</span>
+                            <div className="flex gap-3 text-[10px] text-slate-500">
+                              <span>RRF: {p.rrf_score?.toFixed(4)}</span>
+                              <span>BM25: {p.sparse_score?.toFixed(4)}</span>
+                              <span>Dense: {p.dense_score?.toFixed(3)}</span>
+                            </div>
+                          </div>
+                          {expandedProof === i ? (
+                            <p className="mt-2 text-[11px] text-slate-300 font-mono leading-relaxed whitespace-pre-wrap">{p.text}</p>
+                          ) : (
+                            <p className="mt-1 text-[11px] text-slate-500 font-mono line-clamp-2">{p.text}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* History Panel */}
+        {showHistory && history.length > 0 && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Past RAG Q&A Sessions</p>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {history.map((h, i) => (
+                <div key={h.id || i}
+                  onClick={() => { setQuestion(h.question); setResult(h); setShowHistory(false); }}
+                  className="rounded-lg border border-slate-800 bg-slate-950 p-2.5 cursor-pointer hover:border-amber-500/30 transition-all"
+                >
+                  <p className="text-xs font-mono text-slate-200 line-clamp-1">{h.question}</p>
+                  <div className="flex gap-3 text-[10px] text-slate-500 mt-0.5 font-mono">
+                    <span>{h.created_at?.slice(0, 16)}</span>
+                    <span>{h.chunks_retrieved} chunks</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Human Input → LLM Synthesis Panel
+═══════════════════════════════════════════════════════════════ */
+function HumanSynthesisPanel({ trial }: { trial: any }) {
+  const [humanInput, setHumanInput] = React.useState("");
+  const [question, setQuestion] = React.useState("");
+  const [decision, setDecision] = React.useState<"Approve" | "Reject" | "Escalate">("Approve");
+  const [loading, setLoading] = React.useState(false);
+  const [result, setResult] = React.useState<any>(null);
+  const [synthHistory, setSynthHistory] = React.useState<any[]>([]);
+
+  // Pre-fill question from latest trial ruling
+  React.useEffect(() => {
+    const latestRun = trial?.runs?.[trial.runs.length - 1];
+    if (latestRun?.odin_rulings?.[0]) {
+      setQuestion(latestRun.odin_rulings[0].topic || "Evaluate the commercial exposure findings from ODIN trial");
+    }
+  }, [trial]);
+
+  async function handleSubmit() {
+    if (!humanInput.trim() || !question.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/v1/workspace/trial/human-synthesis", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, human_input: humanInput, decision }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setResult(data);
+      setSynthHistory(prev => [data, ...prev.slice(0, 4)]);
+    } catch (err: any) {
+      setResult({ error: err.message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const RISK_COLORS: Record<string, string> = {
+    Critical: "text-rose-300 border-rose-700 bg-rose-950/30",
+    High: "text-amber-300 border-amber-700 bg-amber-950/30",
+    Medium: "text-yellow-300 border-yellow-800 bg-yellow-950/20",
+    Low: "text-emerald-300 border-emerald-800 bg-emerald-950/20",
+  };
+
+  return (
+    <div className="mt-6 rounded-2xl border border-purple-500/30 bg-slate-950/80 overflow-hidden">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-5 border-b border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-purple-800 flex items-center justify-center">
+            <Eye className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <h3 className="font-orbitron font-bold text-sm text-white">HUMAN REVIEW → ODIN SYNTHESIS</h3>
+            <p className="text-[11px] text-slate-400 font-mono">Your input feeds the LLM orchestrator to generate new structured findings</p>
+          </div>
+        </div>
+        {synthHistory.length > 0 && (
+          <span className="text-[11px] font-mono text-slate-400">{synthHistory.length} synthesis completed</span>
+        )}
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* Input Form */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Question / Topic for Review</label>
+            <textarea
+              value={question}
+              onChange={e => setQuestion(e.target.value)}
+              rows={2}
+              className="w-full rounded-xl border border-slate-700 bg-slate-900/90 p-3 font-mono text-xs text-white focus:border-purple-500 focus:outline-none transition resize-none"
+              placeholder="What finding do you want to review and synthesize?"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Your Human Input / Analysis</label>
+            <textarea
+              value={humanInput}
+              onChange={e => setHumanInput(e.target.value)}
+              rows={2}
+              className="w-full rounded-xl border border-slate-700 bg-slate-900/90 p-3 font-mono text-xs text-white focus:border-purple-500 focus:outline-none transition resize-none"
+              placeholder="Provide your review, observations, or counter-argument..."
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Decision Selector */}
+          <div className="flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 p-1">
+            {(["Approve", "Reject", "Escalate"] as const).map(d => (
+              <button
+                key={d}
+                onClick={() => setDecision(d)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all ${
+                  decision === d
+                    ? d === "Approve" ? "bg-emerald-600 text-white" : d === "Reject" ? "bg-rose-700 text-white" : "bg-amber-600 text-white"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >{d}</button>
+            ))}
+          </div>
+
+          <button
+            onClick={handleSubmit}
+            disabled={loading || !humanInput.trim() || !question.trim()}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-bold font-rajdhani text-sm uppercase tracking-wider shadow-lg shadow-purple-500/20 disabled:opacity-50 transition-all"
+          >
+            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            {loading ? "Synthesizing via Odin..." : "Submit to Odin Orchestrator"}
+          </button>
+        </div>
+
+        {/* Synthesis Result */}
+        {result && !result.error && result.synthesis && (
+          <div className="rounded-2xl border border-purple-500/30 bg-purple-950/10 p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <span className="font-orbitron font-bold text-xs text-purple-300 uppercase tracking-wider">ODIN SYNTHESIS RESULT</span>
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${RISK_COLORS[result.synthesis.risk_level] || "text-slate-300 border-slate-700"}`}>
+                  {result.synthesis.risk_level} RISK
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">
+                  Confidence: {((result.synthesis.confidence || 0) * 100).toFixed(0)}%
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                  result.decision === "Approve" ? "bg-emerald-950 text-emerald-300 border-emerald-700"
+                  : result.decision === "Reject" ? "bg-rose-950 text-rose-300 border-rose-700"
+                  : "bg-amber-950 text-amber-300 border-amber-700"
+                }`}>HUMAN: {result.decision}</span>
+              </div>
+            </div>
+
+            {/* Summary */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Executive Summary</p>
+              <p className="text-sm text-slate-200 font-mono leading-relaxed">{result.synthesis.summary}</p>
+            </div>
+
+            {/* Key Findings */}
+            {result.synthesis.key_findings?.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Key Findings Synthesized by Odin</p>
+                <ul className="space-y-1.5">
+                  {result.synthesis.key_findings.map((f: string, i: number) => (
+                    <li key={i} className="flex gap-2 text-xs font-mono text-slate-300">
+                      <span className="text-purple-400 shrink-0">→</span>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Recommended Action */}
+            {result.synthesis.recommended_action && (
+              <div className="rounded-xl border border-purple-500/20 bg-purple-950/20 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-1">Recommended Action</p>
+                <p className="text-xs font-mono text-slate-300">{result.synthesis.recommended_action}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {result?.error && (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-4 text-xs font-mono text-rose-300">
+            Error: {result.error}
+          </div>
+        )}
+
+        {/* Synthesis History */}
+        {synthHistory.length > 1 && (
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Previous Syntheses (This Session)</p>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {synthHistory.slice(1).map((s, i) => (
+                <div key={i} onClick={() => setResult(s)}
+                  className="min-w-[200px] rounded-xl border border-slate-800 bg-slate-900 p-3 cursor-pointer hover:border-purple-500/30 transition-all"
+                >
+                  <p className="text-[10px] font-mono text-slate-400 line-clamp-2">{s.question}</p>
+                  <span className={`mt-1 inline-block px-1.5 py-0.5 rounded text-[9px] font-bold border ${RISK_COLORS[s.synthesis?.risk_level] || ""}`}>
+                    {s.synthesis?.risk_level} · {s.decision}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

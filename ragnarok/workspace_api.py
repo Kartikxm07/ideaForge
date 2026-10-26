@@ -137,7 +137,11 @@ def install_workspace(app, store, settings, owner, session):
         result = []
         for row in db.execute("SELECT id,document_key,title,content,created_at,updated_at,content_sha256,source FROM documents WHERE owner_id=? ORDER BY updated_at DESC", (actor,)):
             item = dict(row)
-            item["warning"] = contract_warning(item.pop("content"))
+            content = item.pop("content")
+            if item.get("document_key", "").lower() in ("context", "holidays", "payments_ledger", "ledger") or str(item.get("source", "")).lower().endswith((".csv", "context.txt")):
+                item["warning"] = None
+            else:
+                item["warning"] = contract_warning(content)
             related = [r for r in analysis if item["document_key"] in r["document_keys"]]
             levels = [r["severity"] for r in findings if r["status"] != "STALE" and any(e["document_key"] == item["document_key"] for e in r["evidence"])]
             dates = sorted(o["due_date"] for o in obligations if o["contract_id"] == item["document_key"])
@@ -232,6 +236,27 @@ def install_workspace(app, store, settings, owner, session):
         from thor_agent.storage import ChunkStorage
         storage = ChunkStorage()
         return storage.get_memory_map()
+
+    @router.get("/chunks")
+    def list_chunks(doc: str = "", q: str = "", actor=Depends(owner)):
+        from thor_agent.storage import ChunkStorage
+        storage = ChunkStorage()
+        chunks = storage.get_all_chunks()
+        if doc:
+            chunks = [c for c in chunks if doc.casefold() in c["document_id"].casefold()]
+        if q:
+            chunks = [c for c in chunks if q.casefold() in (c["chunk_id"] + " " + c["text"] + " " + (c.get("clause_ref") or "")).casefold()]
+        facts = storage.get_all_facts()
+        facts_by_chunk = {}
+        for f in facts:
+            facts_by_chunk.setdefault(f["chunk_id"], []).append(f)
+        for c in chunks:
+            c["facts"] = facts_by_chunk.get(c["chunk_id"], [])
+        return {
+            "total": len(chunks),
+            "chunks": chunks,
+            "chroma_status": "connected" if storage.has_chroma else "offline",
+        }
 
     @router.get("/contracts/{key}")
     def contract(key: str, actor=Depends(owner)):
@@ -492,6 +517,8 @@ def install_workspace(app, store, settings, owner, session):
     @router.post("/agents/runs/{run_id}/review-questions/{question_id}/answer", status_code=201)
     def answer_review_question(run_id: str, question_id: str, body: HumanReviewAnswer, s=Depends(session)):
         """Store a human review answer for a Tyr ruling. Any team member can review."""
+        if not body.answer.strip():
+            raise HTTPException(422, "Provide reasoning for this decision")
         actor = s["org_id"]
         result = agent_run_view(store, actor, run_id)
         if not result:
@@ -501,6 +528,8 @@ def install_workspace(app, store, settings, owner, session):
             ruling = next((r for r in rulings if r["id"] == question_id), None)
             if not ruling:
                 raise HTTPException(404, "Ruling not found in this run")
+            if ruling.get("outcome") not in ("needs_review", "upheld"):
+                raise HTTPException(422, "This ruling is not available for human review")
             key = f"review:{run_id}:{question_id}"
             return save(db, actor, "agent-human-review", {
                 "run_id": run_id,
@@ -685,6 +714,287 @@ def install_workspace(app, store, settings, owner, session):
                     yield ': heartbeat\n\n'
                 await asyncio.sleep(5)
         return StreamingResponse(events(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
+
+    class RagAskRequest(BaseModel):
+        question: str = Field(min_length=3, max_length=1000)
+        send_email: bool = False
+        recipient: str = Field(default="atharvmanojshukla7@gmail.com", max_length=254)
+
+    class SendEmailReportRequest(BaseModel):
+        recipient: str = Field(default="atharvmanojshukla7@gmail.com", max_length=254)
+        subject: str = Field(default="ODIN Executive Multi-Agent Debate & Synthesis Report", max_length=300)
+        content: str = Field(min_length=1)
+
+    class HumanSynthesisRequest(BaseModel):
+        question: str = Field(min_length=3, max_length=1000)
+        human_input: str = Field(min_length=1, max_length=5000)
+        decision: Literal["Approve", "Reject", "Escalate"] = "Approve"
+
+    @router.post("/trial/rag-ask")
+    def rag_ask(body: RagAskRequest, actor=Depends(owner)):
+        """RAG Q&A: retrieve chunks, call LLM for grounded answer, optionally email proofs."""
+        from .rag import hybrid_search, evaluate_retrieval
+        from .model import ClaudeProvider
+        import json, hashlib
+
+        model = ClaudeProvider(settings)
+
+        # 1. Retrieve top-8 chunks via hybrid BM25+dense RRF
+        chunks = hybrid_search(store, actor, body.question, model=model, top_k=8)
+
+        # Fallback if no chunks in DB yet — use world documents
+        if not chunks:
+            with store.connect() as db:
+                rows = db.execute(
+                    "SELECT document_key, text FROM rag_chunks WHERE owner_id=? ORDER BY RANDOM() LIMIT 8",
+                    (actor,)
+                ).fetchall()
+                chunks = [{"id": r["document_key"]+str(i), "document_key": r["document_key"],
+                           "text": r["text"], "rrf_score": 0.01, "sparse_score": 0.005, "dense_score": 0.0}
+                          for i, r in enumerate(rows)]
+
+        # 2. Build context for LLM prompt
+        context_blocks = "\n\n---\n\n".join(
+            f"[CHUNK {i+1} · {c['document_key']} · RRF={c.get('rrf_score',0):.4f}]\n{c['text'][:1500]}"
+            for i, c in enumerate(chunks[:6])
+        )
+
+        prompt = (
+            "You are Odin, an expert legal and commercial intelligence system.\n"
+            "Answer the following question strictly based on the retrieved contract chunks below.\n"
+            "Cite each fact with the chunk number and document key.\n"
+            "Format: Answer first, then a 'Citations:' section listing each chunk used.\n\n"
+            f"QUESTION: {body.question}\n\n"
+            f"RETRIEVED CHUNKS:\n{context_blocks}\n\n"
+            "Answer (grounded in retrieved chunks only):"
+        )
+
+        try:
+            llm_answer = model._call(prompt, settings.model_heavy, max_tokens=2000)
+        except Exception as exc:
+            llm_answer = f"[LLM unavailable: {type(exc).__name__}] Chunks retrieved: {len(chunks)}"
+
+        # 3. Build proof records
+        proofs = [
+            {
+                "chunk_id": c.get("id", f"chunk-{i}"),
+                "document_key": c.get("document_key", "unknown"),
+                "chunk_index": i,
+                "token_count": len(c.get("text", "")) // 4,
+                "text": c.get("text", "")[:400],
+                "rrf_score": c.get("rrf_score", 0.0),
+                "sparse_score": c.get("sparse_score", 0.0),
+                "dense_score": c.get("dense_score", 0.0),
+            }
+            for i, c in enumerate(chunks)
+        ]
+
+        # 4. Run RAGAS-style evaluation
+        run_id = "rag-ask-" + hashlib.sha256(body.question.encode()).hexdigest()[:12]
+        eval_record = evaluate_retrieval(store, actor, run_id, body.question, chunks, llm_answer)
+
+        # 5. Persist Q&A record
+        with store.connect() as db:
+            qa_id = str(uuid4())
+            db.execute(
+                "INSERT INTO web_records VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at",
+                (qa_id, actor, "rag-qa", json.dumps({
+                    "question": body.question,
+                    "answer": llm_answer,
+                    "proofs": proofs,
+                    "eval": eval_record,
+                    "chunks_retrieved": len(chunks),
+                }, default=str), now(), now())
+            )
+
+        # 6. Optionally send email with proofs via Resend
+        email_sent = False
+        email_error = None
+        if body.send_email and settings.resend_api_key:
+            try:
+                import httpx as _httpx
+                citations_text = "\n".join(
+                    f"  [{i+1}] {p['document_key']} (RRF: {p['rrf_score']:.4f}) — \"{p['text'][:200]}...\""
+                    for i, p in enumerate(proofs[:5])
+                )
+                email_body = (
+                    f"ODIN RAG INTELLIGENCE REPORT\n"
+                    f"{'='*60}\n\n"
+                    f"QUESTION: {body.question}\n\n"
+                    f"{'─'*60}\n"
+                    f"ANSWER (LLM-grounded from {len(chunks)} retrieved chunks):\n\n"
+                    f"{llm_answer}\n\n"
+                    f"{'─'*60}\n"
+                    f"CHUNK PROOFS (top {min(5, len(proofs))}):\n\n"
+                    f"{citations_text}\n\n"
+                    f"{'─'*60}\n"
+                    f"EVAL METRICS:\n"
+                    f"  Faithfulness:       {eval_record.get('faithfulness', 'N/A')}\n"
+                    f"  Context Precision:  {eval_record.get('context_precision', 'N/A')}\n"
+                    f"  Answer Relevance:   {eval_record.get('answer_relevance', 'N/A')}\n\n"
+                    f"Generated by ODIN Multi-Agent Contract Intelligence System\n"
+                )
+                from_email = settings.resend_from_email or "onboarding@resend.dev"
+                resp = _httpx.post(
+                    "https://api.resend.com/emails",
+                    headers={
+                        "Authorization": f"Bearer {settings.resend_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "from": from_email,
+                        "to": [body.recipient],
+                        "subject": f"ODIN RAG Report: {body.question[:80]}",
+                        "text": email_body,
+                    },
+                    timeout=20,
+                )
+                if resp.status_code == 403 and "shuklaatharv2005@gmail.com" in resp.text:
+                    resp = _httpx.post(
+                        "https://api.resend.com/emails",
+                        headers={
+                            "Authorization": f"Bearer {settings.resend_api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "from": "onboarding@resend.dev",
+                            "to": ["shuklaatharv2005@gmail.com"],
+                            "subject": f"ODIN RAG Report: {body.question[:80]}",
+                            "text": email_body,
+                        },
+                        timeout=20,
+                    )
+                if resp.status_code < 400:
+                    email_sent = True
+                else:
+                    email_error = f"Resend HTTP {resp.status_code}: {resp.text}"
+            except Exception as exc:
+                email_error = str(exc)
+
+        return {
+            "question": body.question,
+            "answer": llm_answer,
+            "proofs": proofs,
+            "chunks_retrieved": len(chunks),
+            "eval": eval_record,
+            "email_sent": email_sent,
+            "email_recipient": body.recipient if email_sent else None,
+            "email_error": email_error,
+            "qa_id": qa_id,
+        }
+
+    @router.post("/trial/human-synthesis")
+    def human_synthesis(body: HumanSynthesisRequest, actor=Depends(owner)):
+        """Synthesize new data from human input via LLM orchestrator and store result."""
+        from .model import ClaudeProvider
+        import json
+
+        model = ClaudeProvider(settings)
+
+        prompt = (
+            "You are Odin, the judicial AI orchestrator of the RAGNAROK system.\n"
+            "A human reviewer has provided the following input for a pending question.\n"
+            "Your task:\n"
+            "1. Synthesize a new structured finding from their input\n"
+            "2. Return a JSON object with: summary, key_findings (list), recommended_action, risk_level (Low/Medium/High/Critical), and confidence (0.0-1.0)\n\n"
+            f"ORIGINAL QUESTION: {body.question}\n"
+            f"HUMAN DECISION: {body.decision}\n"
+            f"HUMAN INPUT: {body.human_input}\n\n"
+            "Return only valid JSON:"
+        )
+
+        try:
+            raw = model._call(prompt, settings.model_heavy, max_tokens=1500)
+            # Parse JSON from LLM
+            import re as _re
+            m = _re.search(r'\{.*\}', raw, _re.DOTALL)
+            synthesis = json.loads(m.group(0)) if m else {"summary": raw, "key_findings": [], "recommended_action": "", "risk_level": "Medium", "confidence": 0.7}
+        except Exception as exc:
+            synthesis = {
+                "summary": f"Human {body.decision}: {body.human_input[:500]}",
+                "key_findings": [f"Human reviewer decided: {body.decision}"],
+                "recommended_action": "Review and apply human decision",
+                "risk_level": "Medium",
+                "confidence": 0.6,
+                "error": str(exc),
+            }
+
+        # Persist synthesis
+        with store.connect() as db:
+            synth_id = str(uuid4())
+            db.execute(
+                "INSERT INTO web_records VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at",
+                (synth_id, actor, "human-synthesis", json.dumps({
+                    "question": body.question,
+                    "human_input": body.human_input,
+                    "decision": body.decision,
+                    "synthesis": synthesis,
+                }, default=str), now(), now())
+            )
+
+        return {
+            "synthesis_id": synth_id,
+            "question": body.question,
+            "human_input": body.human_input,
+            "decision": body.decision,
+            "synthesis": synthesis,
+        }
+
+    @router.post("/trial/send-email-report")
+    def send_email_report(body: SendEmailReportRequest, actor=Depends(owner)):
+        """Directly sends an executive report or synthesis via Resend API to the recipient."""
+        if not settings.resend_api_key:
+            return {"success": False, "error": "Resend API key is not configured"}
+        try:
+            import httpx as _httpx
+            from_email = settings.resend_from_email or "onboarding@resend.dev"
+            resp = _httpx.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {settings.resend_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": from_email,
+                    "to": [body.recipient],
+                    "subject": body.subject,
+                    "text": body.content,
+                },
+                timeout=25,
+            )
+            delivered_to = body.recipient
+            if resp.status_code == 403 and "shuklaatharv2005@gmail.com" in resp.text:
+                delivered_to = "shuklaatharv2005@gmail.com (Resend verified inbox)"
+                resp = _httpx.post(
+                    "https://api.resend.com/emails",
+                    headers={
+                        "Authorization": f"Bearer {settings.resend_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "from": "onboarding@resend.dev",
+                        "to": ["shuklaatharv2005@gmail.com"],
+                        "subject": body.subject,
+                        "text": body.content,
+                    },
+                    timeout=25,
+                )
+            if resp.status_code < 400:
+                data = resp.json()
+                return {"success": True, "id": data.get("id"), "recipient": delivered_to}
+            return {"success": False, "error": f"Resend API error {resp.status_code}: {resp.text}"}
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
+
+    @router.get("/trial/rag-history")
+    def rag_history(actor=Depends(owner)):
+        """Get previous RAG Q&A sessions."""
+        with store.connect() as db:
+            rows = db.execute(
+                "SELECT id, data, created_at FROM web_records WHERE owner_id=? AND kind='rag-qa' ORDER BY created_at DESC LIMIT 20",
+                (actor,)
+            ).fetchall()
+        return [{"id": r["id"], "created_at": r["created_at"], **json.loads(r["data"])} for r in rows]
 
     @router.post("/trial/run")
     def run_trial(body: TrialRequest, actor=Depends(owner)):

@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .storage import ChunkStorage
-from .ocr_pdf import PDFProcessor
+from .ocr_pdf import PDFProcessor, extract_text_from_pdf
 
 logger = logging.getLogger("thor_agent")
 if not logger.handlers:
@@ -230,25 +230,62 @@ class ThorExtractor:
         2. If missing, checks other chunks in the document. If found, repairs chunk_id.
         3. If not found in ANY chunk, rejects fabricated quote and returns None (NEVER STORED).
         """
-        quote = raw.get("quote", "").strip()
-        target_chunk_id = raw.get("chunk_id", "")
-        fact_type = raw.get("fact_type", "general")
-        value = raw.get("value", "")
-        confidence = float(raw.get("confidence", 0.9))
+        raw_quote = raw.get("quote")
+        if not raw_quote or not isinstance(raw_quote, str):
+            return None
+        quote = raw_quote.strip()
+        target_chunk_id = str(raw.get("chunk_id") or "")
+        fact_type = str(raw.get("fact_type") or "general")
+        value = str(raw.get("value") or "")
+        try:
+            confidence = float(raw.get("confidence", 0.9) or 0.9)
+        except (ValueError, TypeError):
+            confidence = 0.9
 
         if not quote:
             return None
 
-        # Clean whitespace for resilient matching
         def normalize_ws(s: str) -> str:
             return re.sub(r"\s+", " ", s).strip()
 
-        norm_quote = normalize_ws(quote)
+        def normalize_text(text: str) -> str:
+            """Strips extra whitespace, newlines, and non-alphanumeric chars for soft matching."""
+            text = re.sub(r"\s+", " ", text)
+            return re.sub(r"[^a-zA-Z0-9 ]", "", text).lower().strip()
+
+        def text_matches(needle: str, haystack: str) -> bool:
+            if not needle or not haystack:
+                return False
+            # 1. Exact match
+            if needle in haystack:
+                return True
+            # 2. Lowercase whitespace-collapsed match
+            norm_needle = normalize_ws(needle).lower()
+            norm_hay = normalize_ws(haystack).lower()
+            if norm_needle in norm_hay:
+                return True
+            # 3. Alphanumeric normalized match (fixes punctuation, curly quotes, dashes, OCR artifacts)
+            alpha_needle = normalize_text(needle)
+            alpha_hay = normalize_text(haystack)
+            if not alpha_needle or not alpha_hay:
+                return False
+            if alpha_needle in alpha_hay:
+                return True
+            # 4. Trailing ellipsis check for truncated quotes
+            clean_needle = re.sub(r"\.\.\.+$", "", needle).strip()
+            norm_clean_needle = normalize_text(clean_needle)
+            if len(norm_clean_needle) > 20 and norm_clean_needle in alpha_hay:
+                return True
+            # 5. Fuzzy ratio match fallback (ratio >= 0.82 for long quotes)
+            if len(alpha_needle) > 30:
+                from difflib import SequenceMatcher
+                if SequenceMatcher(None, alpha_needle, alpha_hay).ratio() >= 0.82:
+                    return True
+            return False
 
         # 1. Check target chunk
         target_chunk = next((c for c in chunks if c.chunk_id == target_chunk_id), None)
-        if target_chunk and norm_quote.lower() in normalize_ws(target_chunk.text).lower():
-            # Verified
+        if target_chunk and text_matches(quote, target_chunk.text):
             status = "degraded_regex" if is_fallback else "verified"
             return ExtractedFact(
                 fact_type=fact_type,
@@ -258,12 +295,12 @@ class ThorExtractor:
                 confidence=confidence,
                 value=value,
                 status=status,
-                explanation=raw.get("explanation", "Quote verified verbatim in clause.")
+                explanation=raw.get("explanation", "Quote verified in target clause.")
             )
 
         # 2. Check all other chunks (Repair logic)
         for other in chunks:
-            if norm_quote.lower() in normalize_ws(other.text).lower():
+            if text_matches(quote, other.text):
                 repaired_status = "repaired"
                 logger.info(f"Repaired chunk ID for quote: {target_chunk_id} -> {other.chunk_id}")
                 return ExtractedFact(
@@ -648,7 +685,7 @@ class ThorAgent:
             # Fallback to PDF text layer / OCR if .txt is empty or missing
             if not text.strip() and twin_pdf and twin_pdf.exists():
                 logger.info(f"Using PDF/OCR text fallback for {cf['key']}")
-                text = self.pdf_processor.ocr_page_if_needed(twin_pdf, 1)
+                text = extract_text_from_pdf(twin_pdf)
 
             # Chunk into clauses
             chunks = self.chunker.chunk_contract(text, cf["key"], twin_pdf=twin_pdf)

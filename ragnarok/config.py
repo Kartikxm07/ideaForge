@@ -42,14 +42,19 @@ class Settings:
         if len(token) < 32 or token == "replace-with-at-least-32-random-characters":
             raise ValueError("RAGNAROK_API_TOKEN must be a private random value of at least 32 characters")
 
+        openrouter_key = get("OPENROUTER_API_KEY", "") or get("ODIN_LLM_API_KEY", "")
+        if openrouter_key:
+            os.environ.setdefault("OPENAI_API_KEY", openrouter_key)
+            os.environ.setdefault("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+
         return cls(
             api_token=token,
             owner_id=get("RAGNAROK_OWNER_ID", "local-owner"),
             db_path=Path(get("RAGNAROK_DB_PATH", "./data/ragnarok.sqlite3")),
             anthropic_api_key=get("ANTHROPIC_API_KEY", ""),
-            model_heavy=get("MODEL_HEAVY", "openai/gpt-oss-120b" if get("OPENROUTER_API_KEY") else "claude-sonnet-4-5"),
-            model_light=get("MODEL_LIGHT", "openai/gpt-oss-120b" if get("OPENROUTER_API_KEY") else "claude-haiku-4-5"),
-            openrouter_api_key=get("OPENROUTER_API_KEY", ""),
+            model_heavy=get("MODEL_HEAVY", "openai/gpt-oss-120b" if openrouter_key else "claude-sonnet-4-5"),
+            model_light=get("MODEL_LIGHT", "openai/gpt-oss-120b" if openrouter_key else "claude-haiku-4-5"),
+            openrouter_api_key=openrouter_key,
             resend_api_key=get("RESEND_API_KEY", ""),
             resend_from_email=get("RESEND_FROM_EMAIL", ""),
             odin_alert_recipient=get("ODIN_ALERT_RECIPIENT", ""),
